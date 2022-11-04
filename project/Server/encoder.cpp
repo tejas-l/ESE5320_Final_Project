@@ -119,7 +119,7 @@ uint64_t SHA_dummy(chunk_t *chunk)
 	return hash;
 }
 
-int dedup(uint64_t SHA_result,chunk_t chunk)
+uint32_t dedup(uint64_t SHA_result,chunk_t chunk)
 {
 	static std::vector<chunk_t> SHA_table;
 
@@ -179,7 +179,7 @@ int main(int argc, char* argv[]) {
 	int count = 0;
 	ESE532_Server server;
 	chunk_t cdc_chunk; 
-	int num_chunks = 0; 
+	uint32_t num_chunks = 0; 
 
 
 	// default is 2k
@@ -262,17 +262,32 @@ int main(int argc, char* argv[]) {
 
 			printf("SHA result = %ld, Chunk Number =%d\n", SHA_result, cdc_chunk.number);
 			
-			int chunk_num;
-			if((chunk_num = dedup(SHA_result,cdc_chunk))){
-				printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",cdc_chunk.start, chunk_num);
+			uint32_t dup_chunk_num;
+			if((dup_chunk_num = dedup(SHA_result,cdc_chunk))){
+				uint32_t header = 0;
+
+				header |= (1<<31); // MSB 1 indicates this is a duplicate chunk
+				header |= dup_chunk_num; // 31 bits specify the number of the chunk to be duplicated
+				printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",cdc_chunk.start, dup_chunk_num);
+
+				memcpy(&file[offset], &header, sizeof(header)); // write header to the file
+				offset += sizeof(header);
 
 			}else{
+				uint32_t header = 0;
 				printf("NEW CHUNK : %p\n",cdc_chunk.start);
-				// LZW_encoding(&cdc_chunk);
+				std::vector<int> compressed_data = LZW_encoding(&cdc_chunk);
+				
+				header |= compressed_data.size(); /* size of the new chunk */
+				header &= ~(1<<31); /* msb equals 0 signifies new chunk */
+				memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
+				offset += sizeof(header);
+
+				memcpy(&file[offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
+				offset += compressed_data.size();
 			}
 		}
 
-		offset += length;
 		writer++;
 	}
 
