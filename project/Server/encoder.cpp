@@ -81,6 +81,9 @@ void cdc_new(unsigned char *buff, chunk_t *chunk)
 	if((hash % MODULUS) == TARGET)
 		{
 			chunk->length = MIN_CHUNK_SIZE; // minimum chunk size
+			chunk->start = chunkStart;
+			chunkStart += MIN_CHUNK_SIZE;
+			return;
 		}
 
 	//for (int i = WIN_SIZE +1 ; i < buff_size - WIN_SIZE ; i++)
@@ -93,6 +96,7 @@ void cdc_new(unsigned char *buff, chunk_t *chunk)
 			chunk->length = i;
 			chunk->start = chunkStart;
 			chunkStart += i; // change the chunk start address to next start address;
+
 			return;
 		}
 	}
@@ -119,7 +123,7 @@ uint64_t SHA_dummy(chunk_t *chunk)
 	return hash;
 }
 
-uint32_t dedup(uint64_t SHA_result,chunk_t chunk)
+uint32_t dedup(uint64_t SHA_result,chunk_t *chunk)
 {
 	static std::vector<chunk_t> SHA_table;
 
@@ -128,8 +132,8 @@ uint32_t dedup(uint64_t SHA_result,chunk_t chunk)
 			return SHA_table[i].number;
 		}
 	}
-	chunk.SHA_signature = SHA_result;
-	SHA_table.push_back(chunk);
+	chunk->SHA_signature = SHA_result;
+	SHA_table.push_back(*chunk);
 
 	return 0;
 }
@@ -148,7 +152,7 @@ std::vector<int> LZW_encoding(chunk_t* chunk)
     p += chunk->start[0];
     int code = 256;
     std::vector<int> output_code;
-    std::cout << "String\tOutput_Code\tAddition\n";
+    //std::cout << "String\tOutput_Code\tAddition\n";
     for (unsigned int i = 0; i < chunk->length; i++) {
         if (i != chunk->length - 1)
             c += chunk->start[i + 1];
@@ -156,8 +160,8 @@ std::vector<int> LZW_encoding(chunk_t* chunk)
             p = p + c;
         }
         else {
-            std::cout << p << "\t" << table[p] << "\t\t"
-                 << p + c << "\t" << code << std::endl;
+            //std::cout << p << "\t" << table[p] << "\t\t"
+            //     << p + c << "\t" << code << std::endl;
             output_code.push_back(table[p]);
             table[p + c] = code;
             code++;
@@ -165,10 +169,52 @@ std::vector<int> LZW_encoding(chunk_t* chunk)
         }
         c = "";
     }
-    std::cout << p << "\t" << table[p] << std::endl;
+    //std::cout << p << "\t" << table[p] << std::endl;
     output_code.push_back(table[p]);
     return output_code;
 }
+
+
+void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *new_cdc_chunk)
+{
+	for(int i=0; i<length; i += new_cdc_chunk->length){
+
+		cdc_new(&buffer[i],new_cdc_chunk);
+		new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
+
+		printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
+
+		uint64_t SHA_result = SHA_dummy(new_cdc_chunk);
+
+		printf("SHA result = %ld, Chunk Number =%d\n", SHA_result, new_cdc_chunk->number);
+		
+		uint32_t dup_chunk_num;
+		if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
+			uint32_t header = 0;
+
+			header |= (1<<31); // MSB 1 indicates this is a duplicate chunk
+			header |= dup_chunk_num; // 31 bits specify the number of the chunk to be duplicated
+			printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_cdc_chunk->start, dup_chunk_num);
+
+			memcpy(&file[*offset], &header, sizeof(header)); // write header to the file
+			*offset += sizeof(header);
+
+		}else{
+			uint32_t header = 0;
+			printf("NEW CHUNK : %p\n",new_cdc_chunk->start);
+			std::vector<int> compressed_data = LZW_encoding(new_cdc_chunk);
+			
+			header |= compressed_data.size(); /* size of the new chunk */
+			header &= ~(1<<31); /* msb equals 0 signifies new chunk */
+			memcpy(&file[*offset], &header, sizeof(header)); /* write header to the output file */
+			*offset += sizeof(header);
+
+			memcpy(&file[*offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
+			*offset += compressed_data.size();
+		}
+	}
+}
+
 
 int main(int argc, char* argv[]) {
 	stopwatch ethernet_timer;
@@ -178,9 +224,8 @@ int main(int argc, char* argv[]) {
 	int length = 0;
 	int count = 0;
 	ESE532_Server server;
-	chunk_t cdc_chunk; 
-	uint32_t num_chunks = 0; 
-
+	chunk_t new_cdc_chunk;
+	new_cdc_chunk.number = 0;
 
 	// default is 2k
 	int blocksize = BLOCKSIZE;
@@ -220,9 +265,11 @@ int main(int argc, char* argv[]) {
 
 	// we are just memcpy'ing here, but you should call your
 	// top function here.
-	memcpy(&file[offset], &buffer[HEADER], length);
+	//memcpy(&file[offset], &buffer[HEADER], length);
 
-	offset += length;
+	compression_flow(&buffer[HEADER], length, &offset, &new_cdc_chunk);
+
+	//offset += length;
 	writer++;
 
 	//last message
@@ -250,43 +297,7 @@ int main(int argc, char* argv[]) {
 		
 		printf("Start of Loop, packet size = %d\r\n",length);
 
-		for(int i=0; i<length; i += cdc_chunk.length){
-
-			cdc_new(&buffer[HEADER + i],&cdc_chunk);
-			num_chunks++;
-			cdc_chunk.number = num_chunks;
-
-			printf("Chunk Start = %p, length = %d\n",cdc_chunk.start, cdc_chunk.length);
-
-			uint64_t SHA_result = SHA_dummy(&cdc_chunk);
-
-			printf("SHA result = %ld, Chunk Number =%d\n", SHA_result, cdc_chunk.number);
-			
-			uint32_t dup_chunk_num;
-			if((dup_chunk_num = dedup(SHA_result,cdc_chunk))){
-				uint32_t header = 0;
-
-				header |= (1<<31); // MSB 1 indicates this is a duplicate chunk
-				header |= dup_chunk_num; // 31 bits specify the number of the chunk to be duplicated
-				printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",cdc_chunk.start, dup_chunk_num);
-
-				memcpy(&file[offset], &header, sizeof(header)); // write header to the file
-				offset += sizeof(header);
-
-			}else{
-				uint32_t header = 0;
-				printf("NEW CHUNK : %p\n",cdc_chunk.start);
-				std::vector<int> compressed_data = LZW_encoding(&cdc_chunk);
-				
-				header |= compressed_data.size(); /* size of the new chunk */
-				header &= ~(1<<31); /* msb equals 0 signifies new chunk */
-				memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
-				offset += sizeof(header);
-
-				memcpy(&file[offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
-				offset += compressed_data.size();
-			}
-		}
+		compression_flow(&buffer[HEADER], length, &offset, &new_cdc_chunk);
 
 		writer++;
 	}
@@ -307,6 +318,8 @@ int main(int argc, char* argv[]) {
 	float input_throughput = (bytes_written * 8 / 1000000.0) / ethernet_latency; // Mb/s
 	std::cout << "Input Throughput to Encoder: " << input_throughput << " Mb/s."
 			<< " (Latency: " << ethernet_latency << "s)." << std::endl;
+
+	
 
 	return 0;
 }
