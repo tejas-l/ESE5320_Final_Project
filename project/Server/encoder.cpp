@@ -22,7 +22,7 @@
 #define DONE_BIT_L (1 << 7)
 #define DONE_BIT_H (1 << 15)
 #define WIN_SIZE 16
-#define MAX_CHUNK_SIZE 8*1024 // 8KB max chunk size
+#define MAX_CHUNK_SIZE 1024 // 8KB max chunk size
 #define MIN_CHUNK_SIZE 16 // 16 bytes min chunk size
 #define TARGET 0
 #define PRIME 3
@@ -96,7 +96,6 @@ void cdc_new(unsigned char *buff, chunk_t *chunk)
 			chunk->length = i;
 			chunk->start = chunkStart;
 			chunkStart += i; // change the chunk start address to next start address;
-
 			return;
 		}
 	}
@@ -127,13 +126,17 @@ uint32_t dedup(uint64_t SHA_result,chunk_t *chunk)
 {
 	static std::vector<chunk_t> SHA_table;
 
+	static uint32_t num_unique_chunk = 0;
+
 	for(unsigned int i=0; i<SHA_table.size();i++){
 		if(SHA_table[i].SHA_signature == SHA_result){
 			return SHA_table[i].number;
 		}
 	}
 	chunk->SHA_signature = SHA_result;
+	chunk->number = num_unique_chunk;
 	SHA_table.push_back(*chunk);
+	num_unique_chunk++;
 
 	return 0;
 }
@@ -180,21 +183,22 @@ void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *n
 	for(int i=0; i<length; i += new_cdc_chunk->length){
 
 		cdc_new(&buffer[i],new_cdc_chunk);
-		new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
+		//new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
 
 		printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
 
 		uint64_t SHA_result = SHA_dummy(new_cdc_chunk);
 
-		printf("SHA result = %ld, Chunk Number =%d\n", SHA_result, new_cdc_chunk->number);
+		printf("SHA result = %ld\n", SHA_result);
 		
 		uint32_t dup_chunk_num;
 		if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
 			uint32_t header = 0;
+			header |= (dup_chunk_num<<1); // 31 bits specify the number of the chunk to be duplicated
+			header |= (0x0001); // MSB 1 indicates this is a duplicate chunk
 
-			header |= (1<<31); // MSB 1 indicates this is a duplicate chunk
-			header |= dup_chunk_num; // 31 bits specify the number of the chunk to be duplicated
 			printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_cdc_chunk->start, dup_chunk_num);
+			printf("Header written %x\n",header);
 
 			memcpy(&file[*offset], &header, sizeof(header)); // write header to the file
 			*offset += sizeof(header);
@@ -204,8 +208,9 @@ void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *n
 			printf("NEW CHUNK : %p\n",new_cdc_chunk->start);
 			std::vector<int> compressed_data = LZW_encoding(new_cdc_chunk);
 			
-			header |= compressed_data.size(); /* size of the new chunk */
-			header &= ~(1<<31); /* msb equals 0 signifies new chunk */
+			header |= (compressed_data.size()<<1); /* size of the new chunk */
+			header &= ~(0x0001); /* msb equals 0 signifies new chunk */
+			printf("Header written %x\n",header);
 			memcpy(&file[*offset], &header, sizeof(header)); /* write header to the output file */
 			*offset += sizeof(header);
 
