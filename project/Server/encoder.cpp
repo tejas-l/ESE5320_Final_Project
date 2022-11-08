@@ -16,6 +16,11 @@
 #include <math.h>
 #include <vector>
 #include <bits/stdc++.h> 
+#include <unordered_map>
+
+// includes for wolfssl
+#include "wolfssl/options.h"
+#include <wolfssl/wolfcrypt/sha3.h>
 
 #define NUM_PACKETS 8
 #define pipe_depth 4
@@ -35,7 +40,7 @@ unsigned char* file;
 typedef struct chunk{
 	unsigned char *start;
 	unsigned int length;
-	uint64_t SHA_signature; 
+	std::string SHA_signature; 
 	uint32_t number; 
 } chunk_t;
 
@@ -106,6 +111,19 @@ void cdc_new(unsigned char *buff, chunk_t *chunk)
 
 }
 
+std::string SHA_384(chunk_t *chunk)
+{
+	// use the wolfssl sha library
+	wc_Sha3 sha3_384;
+	char shaSum[SHA3_384_DIGEST_SIZE];
+
+	wc_InitSha3_384(&sha3_384, NULL, INVALID_DEVID);
+    wc_Sha3_384_Update(&sha3_384, (const unsigned char*)chunk->start, chunk->length);
+    wc_Sha3_384_Final(&sha3_384, (unsigned char*)shaSum);
+
+	return std::string(shaSum);
+}
+
 uint64_t SHA_dummy(chunk_t *chunk)
 {
 	// put your hash function implementation here
@@ -122,23 +140,31 @@ uint64_t SHA_dummy(chunk_t *chunk)
 	return hash;
 }
 
-uint32_t dedup(uint64_t SHA_result,chunk_t *chunk)
+uint32_t dedup(std::string SHA_result,chunk_t *chunk)
 {
-	static std::vector<chunk_t> SHA_table;
+	//static std::vector<chunk_t> SHA_table;
+	static std::unordered_map<std::string, uint32_t> SHA_map;
 
 	static uint32_t num_unique_chunk = 0;
 
-	for(unsigned int i=0; i<SHA_table.size();i++){
-		if(SHA_table[i].SHA_signature == SHA_result){
-			return SHA_table[i].number;
-		}
+	// for(unsigned int i=0; i<SHA_table.size();i++){
+	// 	if(SHA_table[i].SHA_signature == SHA_result){
+	// 		return SHA_table[i].number;
+	// 	}
+	// }
+	auto find_SHA = SHA_map.find(SHA_result);
+	if(find_SHA == SHA_map.end()){
+		// add new chunk to the map and return 0
+		chunk->SHA_signature = SHA_result;
+		chunk->number = num_unique_chunk;
+		SHA_map.insert({SHA_result,num_unique_chunk});
+		
+		num_unique_chunk++;
+		return 0;
+	}else{
+		// return the number of chunk this chunk is duplicate of
+		return SHA_map[SHA_result];
 	}
-	chunk->SHA_signature = SHA_result;
-	chunk->number = num_unique_chunk;
-	SHA_table.push_back(*chunk);
-	num_unique_chunk++;
-
-	return 0;
 }
 
 std::vector<int> LZW_encoding(chunk_t* chunk)
@@ -185,11 +211,12 @@ void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *n
 		cdc_new(&buffer[i],new_cdc_chunk);
 		//new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
 
-		printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
+		//printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
+		std::cout << "Chunk Start = " << new_cdc_chunk->start << ", length = " << new_cdc_chunk->length << std::endl;
 
-		uint64_t SHA_result = SHA_dummy(new_cdc_chunk);
+		std::string SHA_result = SHA_384(new_cdc_chunk);
 
-		printf("SHA result = %ld\n", SHA_result);
+		std::cout << "SHA result = " << SHA_result << std::endl;
 		
 		uint32_t dup_chunk_num;
 		if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
