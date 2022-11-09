@@ -32,6 +32,7 @@
 #define TARGET 0
 #define PRIME 3
 #define MODULUS 256
+#define CODE_LENGTH (13) // = log2(MAX_CHUNK_SIZE)
 
 int offset = 0;
 unsigned char* file;
@@ -203,8 +204,35 @@ std::vector<int> LZW_encoding(chunk_t* chunk)
     return output_code;
 }
 
+int compress(std::vector<int> &compressed_data)
+{
+	uint64_t Length = 0;
+	unsigned char Byte = 0;
 
-void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *new_cdc_chunk)
+	for(int i=0; i< compressed_data.size(); i++){
+		int data = compressed_data[i];
+
+		for(int j=0; j<CODE_LENGTH; j++){
+			Byte = (Byte << 1) | ((data >> (CODE_LENGTH - 1 - j)) & 1);
+
+			if(++Length % 8 == 0){
+				file[offset + Length/8 - 1] = Byte; // write data to temp array
+				Byte = 0;
+			}
+		}
+	}
+
+	if(Length % 8 > 0){
+		Byte = Byte << (8 - (Length%8));
+		Length += (8 - (Length%8));
+		file[offset + Length/8 - 1] = Byte;
+	}
+
+	return Length/8; // return number of bytes to be written to output file
+}
+
+
+void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 {
 	for(int i=0; i<length; i += new_cdc_chunk->length){
 
@@ -227,8 +255,8 @@ void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *n
 			printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_cdc_chunk->start, dup_chunk_num);
 			printf("Header written %x\n",header);
 
-			memcpy(&file[*offset], &header, sizeof(header)); // write header to the file
-			*offset += sizeof(header);
+			memcpy(&file[offset], &header, sizeof(header)); // write header to the file
+			offset += sizeof(header);
 
 		}else{
 			uint32_t header = 0;
@@ -238,11 +266,14 @@ void compression_flow(unsigned char *buffer, int length, int *offset, chunk_t *n
 			header |= (compressed_data.size()<<1); /* size of the new chunk */
 			header &= ~(0x0001); /* msb equals 0 signifies new chunk */
 			printf("Header written %x\n",header);
-			memcpy(&file[*offset], &header, sizeof(header)); /* write header to the output file */
-			*offset += sizeof(header);
+			memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
+			offset += sizeof(header);
 
-			memcpy(&file[*offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
-			*offset += compressed_data.size();
+			// compress the lzw encoded data
+			int compressed_length = compress(compressed_data);
+
+			//memcpy(&file[*offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
+			offset += compressed_length;
 		}
 	}
 }
@@ -299,7 +330,7 @@ int main(int argc, char* argv[]) {
 	// top function here.
 	//memcpy(&file[offset], &buffer[HEADER], length);
 
-	compression_flow(&buffer[HEADER], length, &offset, &new_cdc_chunk);
+	compression_flow(&buffer[HEADER], length, &new_cdc_chunk);
 
 	//offset += length;
 	writer++;
@@ -329,7 +360,7 @@ int main(int argc, char* argv[]) {
 		
 		printf("Start of Loop, packet size = %d\r\n",length);
 
-		compression_flow(&buffer[HEADER], length, &offset, &new_cdc_chunk);
+		compression_flow(&buffer[HEADER], length, &new_cdc_chunk);
 
 		writer++;
 	}
