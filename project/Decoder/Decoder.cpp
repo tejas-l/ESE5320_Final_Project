@@ -44,14 +44,21 @@ static const std::string Decompress(size_t Size)
   std::string Output = Symbol;
   while (Input_position / 8 < Size - 1)
   {
+    //printf("%d\n", Old);
     int New = Read_code();
     std::string Symbols;
-    if (New >= (int) Code_table.size())
+    //printf("1\n");
+    if (New >= (int) Code_table.size()){
       Symbols = Code_table[Old] + Symbol;
-    else
+      //printf("2\n");
+    }
+    else{
       Symbols = Code_table[New];
+      //printf("3\n");
+    }
     Output += Symbols;
     Symbol = std::string(1, Symbols[0]);
+    //printf("4\n");
     Code_table.push_back(Code_table[Old] + Symbol);
     Old = New;
   }
@@ -61,12 +68,14 @@ static const std::string Decompress(size_t Size)
 
 int main(int Parameter_count, char * Parameters[])
 {
+  printf("Hello 1\n");
   if (Parameter_count < 3)
   {
     std::cout << "Usage: " << Parameters[0] << " <Compressed file> <Decompressed file>\n";
     return EXIT_SUCCESS;
   }
 
+  printf("Hello 2\n");
   Input.open(Parameters[1], std::ios::binary);
   if (!Input.good())
   {
@@ -74,6 +83,7 @@ int main(int Parameter_count, char * Parameters[])
     return EXIT_FAILURE;
   }
 
+  printf("Hello 3\n");
   std::ofstream Output(Parameters[2], std::ios::binary);
   if (!Output.good())
   {
@@ -81,12 +91,16 @@ int main(int Parameter_count, char * Parameters[])
     return EXIT_FAILURE;
   }
 
+  std::cout << "entering the while loop" << std::endl;
+
   chunk_list Chunks;
   int i = 0;
+  int num_chunks = 0;
   while (true)
   {
     uint32_t Header;
     Input.read((char *) &Header, sizeof(int32_t));
+    printf("header = %d chunk no = %d\n",Header,num_chunks);
     if (Input.eof())
       break;
 
@@ -112,6 +126,7 @@ int main(int Parameter_count, char * Parameters[])
        }
     }
     i++;
+    num_chunks++;
   }
 
   return EXIT_SUCCESS;

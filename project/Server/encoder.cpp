@@ -27,7 +27,7 @@
 #define DONE_BIT_L (1 << 7)
 #define DONE_BIT_H (1 << 15)
 #define WIN_SIZE 16
-#define MAX_CHUNK_SIZE 1024 // 8KB max chunk size
+#define MAX_CHUNK_SIZE 8*1024 // 8KB max chunk size
 #define MIN_CHUNK_SIZE 16 // 16 bytes min chunk size
 #define TARGET 0
 #define PRIME 3
@@ -158,7 +158,8 @@ uint32_t dedup(std::string SHA_result,chunk_t *chunk)
 		// add new chunk to the map and return 0
 		chunk->SHA_signature = SHA_result;
 		chunk->number = num_unique_chunk;
-		SHA_map.insert({SHA_result,num_unique_chunk});
+		//SHA_map.insert({SHA_result,num_unique_chunk});
+		SHA_map[SHA_result] = num_unique_chunk;
 		
 		num_unique_chunk++;
 		return 0;
@@ -204,7 +205,7 @@ std::vector<int> LZW_encoding(chunk_t* chunk)
     return output_code;
 }
 
-int compress(std::vector<int> &compressed_data)
+uint64_t compress(std::vector<int> &compressed_data)
 {
 	uint64_t Length = 0;
 	unsigned char Byte = 0;
@@ -239,8 +240,8 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 		cdc_new(&buffer[i],new_cdc_chunk);
 		//new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
 
-		//printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
-		std::cout << "Chunk Start = " << new_cdc_chunk->start << ", length = " << new_cdc_chunk->length << std::endl;
+		printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
+		//std::cout << "Chunk Start = " << static_cast<void *>(new_cdc_chunk->start) << ", length = " << new_cdc_chunk->length << std::endl;
 
 		std::string SHA_result = SHA_384(new_cdc_chunk);
 
@@ -250,27 +251,33 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 		if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
 			uint32_t header = 0;
 			header |= (dup_chunk_num<<1); // 31 bits specify the number of the chunk to be duplicated
-			header |= (0x0001); // MSB 1 indicates this is a duplicate chunk
+			header |= (0x1); // LSB 1 indicates this is a duplicate chunk
 
 			printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_cdc_chunk->start, dup_chunk_num);
-			printf("Header written %x\n",header);
+			printf("Header written %d\n",header);
 
 			memcpy(&file[offset], &header, sizeof(header)); // write header to the file
 			offset += sizeof(header);
 
 		}else{
 			uint32_t header = 0;
-			printf("NEW CHUNK : %p\n",new_cdc_chunk->start);
+			printf("NEW CHUNK : %p chunk no = %d\n",new_cdc_chunk->start, new_cdc_chunk->number);
 			std::vector<int> compressed_data = LZW_encoding(new_cdc_chunk);
 			
-			header |= (compressed_data.size()<<1); /* size of the new chunk */
-			header &= ~(0x0001); /* msb equals 0 signifies new chunk */
+			uint64_t compressed_size = ceil(13*compressed_data.size() / 8.0);
+			header |= ( compressed_size <<1); /* size of the new chunk */
+			header &= ~(0x1); /* lsb equals 0 signifies new chunk */
 			printf("Header written %x\n",header);
 			memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
 			offset += sizeof(header);
 
 			// compress the lzw encoded data
-			int compressed_length = compress(compressed_data);
+			uint64_t compressed_length = compress(compressed_data);
+
+			if(compressed_length != compressed_size){
+				std::cout << "Error: lengths not matching, calculated = " << compressed_size << ", return_val = " << std::endl;
+				exit(1);
+			}
 
 			//memcpy(&file[*offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
 			offset += compressed_length;
