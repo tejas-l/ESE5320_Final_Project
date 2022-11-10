@@ -43,8 +43,15 @@ typedef struct chunk{
 	unsigned int length;
 	std::string SHA_signature; 
 	uint32_t number; 
+	//CHANGE
+	uint32_t chunk_num_total;
 } chunk_t;
 
+typedef struct chunk_number_data{
+	uint32_t chunk_number_data;
+	bool unique;
+	uint32_t dup_num;
+} chunk_number_data_t;
 
 void handle_input(int argc, char* argv[], int* blocksize) {
 	int x;
@@ -78,9 +85,9 @@ uint64_t hash_func(unsigned char *input, unsigned int pos)
 }
 
 	//For rolling hash 
-void cdc_new(unsigned char *buff, chunk_t *chunk)
+void cdc_new(unsigned char *buff, chunk_t *chunk, int packet_length)
 {
-	static unsigned char *chunkStart = buff;
+	unsigned char *chunkStart = buff;
 
 	uint64_t hash = hash_func(buff,WIN_SIZE); 
 
@@ -104,6 +111,12 @@ void cdc_new(unsigned char *buff, chunk_t *chunk)
 			chunkStart += i; // change the chunk start address to next start address;
 			return;
 		}
+		else if((i + WIN_SIZE -1) > packet_length){
+			chunk->length = i+WIN_SIZE;
+			chunk->start = chunkStart;
+			chunkStart += i; // change the chunk start address to next start address;
+			return;
+		}
 	}
 	chunk->length = MAX_CHUNK_SIZE;
 	chunk->start = chunkStart;
@@ -120,7 +133,7 @@ std::string SHA_384(chunk_t *chunk)
 
 	wc_InitSha3_384(&sha3_384, NULL, INVALID_DEVID);
     wc_Sha3_384_Update(&sha3_384, (const unsigned char*)chunk->start, chunk->length);
-    wc_Sha3_384_Final(&sha3_384, (unsigned char*)shaSum);
+    wc_Sha3_384_Final(&sha3_384, (unsigned char *)shaSum);
 
 	return std::string(shaSum);
 }
@@ -140,11 +153,11 @@ uint64_t SHA_dummy(chunk_t *chunk)
 	}
 	return hash;
 }
-
+static int number_of_chunk=0;
 uint32_t dedup(std::string SHA_result,chunk_t *chunk)
 {
 	//static std::vector<chunk_t> SHA_table;
-	static std::unordered_map<std::string, uint32_t> SHA_map;
+	static std::unordered_map<std::string, chunk_t> SHA_map;
 
 	static uint32_t num_unique_chunk = 0;
 
@@ -153,19 +166,37 @@ uint32_t dedup(std::string SHA_result,chunk_t *chunk)
 	// 		return SHA_table[i].number;
 	// 	}
 	// }
+	//CHANGE
+	number_of_chunk++;
+	chunk->chunk_num_total= number_of_chunk;
 	auto find_SHA = SHA_map.find(SHA_result);
 	if(find_SHA == SHA_map.end()){
 		// add new chunk to the map and return 0
 		chunk->SHA_signature = SHA_result;
 		chunk->number = num_unique_chunk;
 		//SHA_map.insert({SHA_result,num_unique_chunk});
-		SHA_map[SHA_result] = num_unique_chunk;
+		//SHA_map[SHA_result] = num_unique_chunk;
+		SHA_map[SHA_result] = *chunk;
 		
 		num_unique_chunk++;
 		return 0;
 	}else{
 		// return the number of chunk this chunk is duplicate of
-		return SHA_map[SHA_result];
+		//CHNAGE
+		//chunk->number = SHA_map[SHA_result];
+		chunk_t chunk_found = SHA_map[SHA_result];
+		if(chunk->length == chunk_found.length){
+			return chunk_found.number;
+		}else{
+			chunk->SHA_signature = SHA_result;
+			chunk->number = num_unique_chunk;
+			//SHA_map.insert({SHA_result,num_unique_chunk});
+			//SHA_map[SHA_result] = num_unique_chunk;
+			SHA_map[SHA_result] = *chunk;
+			
+			num_unique_chunk++;
+			return 0;
+		}
 	}
 }
 
@@ -231,13 +262,17 @@ uint64_t compress(std::vector<int> &compressed_data)
 
 	return Length/8; // return number of bytes to be written to output file
 }
+static int chunk_number1 = 0;
+std::vector<chunk_number_data_t> chunk_num_data_vector;
 
 
 void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 {
 	for(int i=0; i<length; i += new_cdc_chunk->length){
 
-		cdc_new(&buffer[i],new_cdc_chunk);
+		chunk_number_data_t chunk_data;
+
+		cdc_new(&buffer[i],new_cdc_chunk,length);
 		//new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
 
 		printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
@@ -246,6 +281,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 		std::string SHA_result = SHA_384(new_cdc_chunk);
 
 		std::cout << "SHA result = " << SHA_result << std::endl;
+		chunk_number1 ++;
 		
 		uint32_t dup_chunk_num;
 		if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
@@ -255,6 +291,10 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 
 			printf("DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_cdc_chunk->start, dup_chunk_num);
 			printf("Header written %d\n",header);
+			
+			chunk_data.chunk_number_data = new_cdc_chunk->chunk_num_total;
+			chunk_data.dup_num = dup_chunk_num;
+
 
 			memcpy(&file[offset], &header, sizeof(header)); // write header to the file
 			offset += sizeof(header);
@@ -270,6 +310,8 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 			printf("Header written %x\n",header);
 			memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
 			offset += sizeof(header);
+			chunk_data.chunk_number_data = new_cdc_chunk->chunk_num_total;
+			chunk_data.unique = true;
 
 			// compress the lzw encoded data
 			uint64_t compressed_length = compress(compressed_data);
@@ -282,9 +324,9 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 			//memcpy(&file[*offset], &compressed_data, compressed_data.size());  /* write compressed data to output file */
 			offset += compressed_length;
 		}
+		chunk_num_data_vector.push_back(chunk_data);
 	}
 }
-
 
 int main(int argc, char* argv[]) {
 	stopwatch ethernet_timer;
@@ -330,6 +372,7 @@ int main(int argc, char* argv[]) {
 	done = buffer[1] & DONE_BIT_L;
 	length = buffer[0] | (buffer[1] << 8);
 	length &= ~DONE_BIT_H;
+	std::cout << " packet length " << length << std::endl;
 	// printing takes time so be weary of transfer rate
 	//printf("length: %d offset %d\n",length,offset);
 
@@ -371,6 +414,18 @@ int main(int argc, char* argv[]) {
 
 		writer++;
 	}
+	printf("Total chunks - %d\n", chunk_number1);
+
+	printf("chunk_data - \n");
+
+	for(int i =0; i< chunk_num_data_vector.size(); i++){
+		printf("Chunk number - %d \n",chunk_num_data_vector[i].chunk_number_data);
+		if(chunk_num_data_vector[i].unique != true){
+			printf("Duplicate number - %d \n", chunk_num_data_vector[i].dup_num);
+		}
+	}
+
+
 
 	// write file to root and you can use diff tool on board
 	FILE *outfd = fopen("output_cpu.bin", "wb");
