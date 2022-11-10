@@ -85,24 +85,31 @@ uint64_t hash_func(unsigned char *input, unsigned int pos)
 }
 
 	//For rolling hash 
-void cdc_new(unsigned char *buff, chunk_t *chunk, int packet_length)
+void cdc_new(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 {
 	unsigned char *chunkStart = buff;
 
 	uint64_t hash = hash_func(buff,WIN_SIZE); 
 
-	if((hash % MODULUS) == TARGET)
-		{
-			chunk->length = MIN_CHUNK_SIZE; // minimum chunk size
-			chunk->start = chunkStart;
-			chunkStart += MIN_CHUNK_SIZE;
-			return;
-		}
+	// if((hash % MODULUS) == TARGET)
+	// 	{
+	// 		chunk->length = MIN_CHUNK_SIZE; // minimum chunk size
+	// 		chunk->start = chunkStart;
+	// 		chunkStart += MIN_CHUNK_SIZE;
+	// 		return;
+	// 	}
 
 	//for (int i = WIN_SIZE +1 ; i < buff_size - WIN_SIZE ; i++)
-	for (int i = MIN_CHUNK_SIZE +1 ; i < MAX_CHUNK_SIZE - MIN_CHUNK_SIZE ; i++)
+	for (int i = WIN_SIZE +1 ; i < MAX_CHUNK_SIZE - WIN_SIZE ; i++)
 	{
-		hash = (hash * PRIME - (buff[i-1])*pow(PRIME,WIN_SIZE+1) + (buff[i-1+WIN_SIZE]*PRIME)); 
+		hash = (hash * PRIME - (buff[i-1])*pow(PRIME,WIN_SIZE+1) + (buff[i-1+WIN_SIZE]*PRIME));
+
+		if((last_index + i + WIN_SIZE -1) > packet_length){
+			chunk->length = packet_length - last_index;
+			chunk->start = chunkStart;
+			chunkStart += i; // change the chunk start address to next start address;
+			return;
+		}
 
 		if((hash % MODULUS) == TARGET)
 		{
@@ -111,12 +118,7 @@ void cdc_new(unsigned char *buff, chunk_t *chunk, int packet_length)
 			chunkStart += i; // change the chunk start address to next start address;
 			return;
 		}
-		else if((i + WIN_SIZE -1) > packet_length){
-			chunk->length = i+WIN_SIZE;
-			chunk->start = chunkStart;
-			chunkStart += i; // change the chunk start address to next start address;
-			return;
-		}
+
 	}
 	chunk->length = MAX_CHUNK_SIZE;
 	chunk->start = chunkStart;
@@ -138,21 +140,7 @@ std::string SHA_384(chunk_t *chunk)
 	return std::string(shaSum);
 }
 
-uint64_t SHA_dummy(chunk_t *chunk)
-{
-	// put your hash function implementation here
-	uint64_t hash = 0x2890032189F32 ; 
-	
-	for ( unsigned int i = 0 ; i<WIN_SIZE ; i++)
-	{
-		hash += (chunk->start[WIN_SIZE + WIN_SIZE-1-i]) * (pow(PRIME,i+1)); 
-	}
 
-	for(unsigned int i=WIN_SIZE; i<(chunk->length-WIN_SIZE); i++){
-		hash = (hash * PRIME - (chunk->start[i-1])*pow(PRIME,WIN_SIZE+1) + (chunk->start[i-1+WIN_SIZE]*PRIME));
-	}
-	return hash;
-}
 static int number_of_chunk=0;
 uint32_t dedup(std::string SHA_result,chunk_t *chunk)
 {
@@ -272,7 +260,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 
 		chunk_number_data_t chunk_data;
 
-		cdc_new(&buffer[i],new_cdc_chunk,length);
+		cdc_new(&buffer[i],new_cdc_chunk,length,i);
 		//new_cdc_chunk->number++; // same cdc chunk variable is used to store new chunk info temporarily so we can increment the variable directly
 
 		printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
@@ -344,6 +332,18 @@ int main(int argc, char* argv[]) {
 
 	// set blocksize if decalred through command line
 	handle_input(argc, argv, &blocksize);
+
+	// check filename through argument
+	const char *filename = "output_cpu.bin";
+	if(argc > 1){
+		if(*argv[1] == '-'){
+			if(argc == 4){
+				filename = argv[3]; // ./encoder -b 1024 filename
+			}
+		}else{
+			filename = argv[1]; // ./encoder filename
+		}
+	}
 
 	file = (unsigned char*) malloc(sizeof(unsigned char) * 70000000);
 	if (file == NULL) {
@@ -428,7 +428,7 @@ int main(int argc, char* argv[]) {
 
 
 	// write file to root and you can use diff tool on board
-	FILE *outfd = fopen("output_cpu.bin", "wb");
+	FILE *outfd = fopen(filename, "wb");
 	int bytes_written = fwrite(&file[0], 1, offset, outfd);
 	printf("write file with %d\n", bytes_written);
 	fclose(outfd);
