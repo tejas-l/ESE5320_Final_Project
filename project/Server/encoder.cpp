@@ -163,17 +163,6 @@ uint32_t dedup(std::string SHA_result,chunk_t *chunk)
         // return the number of chunk this chunk is duplicate of
         return SHA_map[SHA_result];
 
-        
-        // if(chunk->length == chunk_found.length){
-        //     return chunk_found.number;
-        // }else{
-        //     chunk->SHA_signature = SHA_result;
-        //     chunk->number = num_unique_chunk;
-        //     SHA_map[SHA_result] = *chunk;
-            
-        //     num_unique_chunk++;
-        //     return 0;
-        // }
     }
 }
 
