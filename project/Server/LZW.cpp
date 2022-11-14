@@ -9,6 +9,49 @@ extern unsigned char* file;
 #define OUT_SIZE_BITS 8
 #define MIN(A,B) ( (A)<(B) ? (A) : (B) );
 
+
+
+uint64_t compress(std::vector<int> &compressed_data)
+{
+    uint64_t Length = 0;
+    unsigned char Byte = 0;
+
+    uint8_t rem_inBytes = CODE_LENGTH;
+    uint8_t rem_outBytes = OUT_SIZE_BITS;
+
+    for(int i=0; i<compressed_data.size(); i++){
+        int inData = compressed_data[i];
+        rem_inBytes = CODE_LENGTH;
+
+        while(rem_inBytes){
+
+            int read_bits = MIN(rem_inBytes,rem_outBytes);
+            Byte = (Byte << read_bits) | ( inData >> (rem_inBytes - read_bits) );
+
+            rem_inBytes -= read_bits;
+            rem_outBytes -= read_bits;
+            Length += read_bits;
+            inData &= ((0x1 << rem_inBytes) - 1);
+
+            if(rem_outBytes == 0){
+                file[offset + Length/8 - 1] = Byte;
+                Byte = 0;
+                rem_outBytes = OUT_SIZE_BITS;
+            }
+        }
+    }
+
+    if(Length % 8 > 0){
+        Byte = Byte << (8 - (Length%8));
+        Length += (8 - (Length%8));
+        file[offset + Length/8 - 1] = Byte;
+    }
+
+    return Length/8; // return number of bytes to be written to output file
+}
+
+
+
 //std::vector<int> LZW_encoding(chunk_t* chunk)
 uint64_t LZW_encoding(chunk_t* chunk)
 {
@@ -54,43 +97,4 @@ uint64_t LZW_encoding(chunk_t* chunk)
     offset += sizeof(header);
 
     return compress(output_code);
-}
-
-uint64_t compress(std::vector<int> &compressed_data)
-{
-    uint64_t Length = 0;
-    unsigned char Byte = 0;
-
-    uint8_t rem_inBytes = CODE_LENGTH;
-    uint8_t rem_outBytes = OUT_SIZE_BITS;
-
-    for(int i=0; i<compressed_data.size(); i++){
-        int inData = compressed_data[i];
-        rem_inBytes = CODE_LENGTH;
-
-        while(rem_inBytes){
-
-            int read_bits = MIN(rem_inBytes,rem_outBytes);
-            Byte = (Byte << read_bits) | ( inData >> (rem_inBytes - read_bits) );
-
-            rem_inBytes -= read_bits;
-            rem_outBytes -= read_bits;
-            Length += read_bits;
-            inData &= ((0x1 << rem_inBytes) - 1);
-
-            if(rem_outBytes == 0){
-                file[offset + Length/8 - 1] = Byte;
-                Byte = 0;
-                rem_outBytes = OUT_SIZE_BITS;
-            }
-        }
-    }
-
-    if(Length % 8 > 0){
-        Byte = Byte << (8 - (Length%8));
-        Length += (8 - (Length%8));
-        file[offset + Length/8 - 1] = Byte;
-    }
-
-    return Length/8; // return number of bytes to be written to output file
 }

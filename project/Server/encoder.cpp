@@ -27,7 +27,7 @@ stopwatch cdc_time;
 stopwatch sha_time;
 stopwatch dedup_time;
 stopwatch lzw_time;
-stopwatch compress_time;
+//stopwatch compress_time;
 
 void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 {
@@ -63,6 +63,8 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             offset += sizeof(header);
 
         }else{
+
+            dedup_time.stop();
             uint32_t header = 0;
             LOG(LOG_INFO_2,"NEW CHUNK : %p chunk no = %d\n",new_cdc_chunk->start, new_cdc_chunk->number);
            
@@ -74,7 +76,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 
             lzw_time.stop();
 
-            compress_time.start();
+            //compress_time.start();
             
             // uint64_t compressed_size = ceil(13*compressed_data.size() / 8.0);
             // header |= ( compressed_size <<1); /* size of the new chunk */
@@ -83,17 +85,17 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             // memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
             // offset += sizeof(header);
 
-            // compress the lzw encoded data
-            //uint64_t compressed_length = compress(compressed_data);
+            // // compress the lzw encoded data
+            // uint64_t compressed_length = compress(compressed_data);
 
-            compress_time.stop();
+            //compress_time.stop();
             
 
-            if(compressed_length != compressed_size){
-                //std::cout << "Error: lengths not matching, calculated = " << compressed_size << ", return_val = " << compressed_length<< std::endl;
-                LOG(LOG_ERR,"Error on line %d: lengths not matching, calculated = %d, return_val = %d\n",__LINE__,compressed_size, compressed_length);
-                exit(1);
-            }
+            // if(compressed_length != compressed_size){
+            //     //std::cout << "Error: lengths not matching, calculated = " << compressed_size << ", return_val = " << compressed_length<< std::endl;
+            //     LOG(LOG_ERR,"Error on line %d: lengths not matching, calculated = %d, return_val = %d\n",__LINE__,compressed_size, compressed_length);
+            //     exit(1);
+            // }
             offset += compressed_length;
         }
     }   
@@ -212,7 +214,7 @@ int main(int argc, char* argv[]) {
     std::cout << "Average time for SHA = " << sha_time.avg_latency() << "ms" << std::endl;
     std::cout << "Average time for Dedup = " << dedup_time.avg_latency() << "ms" << std::endl;
     std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << std::endl;
-    std::cout << "Average time for Compress = " << compress_time.avg_latency() << "ms" << std::endl;
+    //std::cout << "Average time for Compress = " << compress_time.avg_latency() << "ns" << std::endl;
 
     std::cout << "Total runtime = " << total_time.latency() << "ms" << std::endl;
     float output_time = (total_time.latency()/1000.0);
