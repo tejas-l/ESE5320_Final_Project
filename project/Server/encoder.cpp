@@ -9,32 +9,49 @@ void handle_input(int argc, char* argv[], int* blocksize) {
     extern char *optarg;
 
     while ((x = getopt(argc, argv, ":b:")) != -1) {
-        switch (x) {
-        case 'b':
-            *blocksize = atoi(optarg);
-            printf("blocksize is set to %d optarg\n", *blocksize);
-            break;
-        case ':':
-            printf("-%c without parameter\n", optopt);
-            break;
+        switch(x) {
+            case 'b':
+                *blocksize = atoi(optarg);
+                printf("blocksize is set to %d optarg\n", *blocksize);
+                break;
+            case ':':
+                printf("-%c without parameter\n", optopt);
+                break;
         }
     }
 }
 
 static unsigned int LZW_in_bytes = 0;
+static unsigned int Input_bytes = 0;
 
 void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 {
+
+    stopwatch cdc_time;
+    stopwatch sha_time;
+    stopwatch dedup_time;
+    stopwatch lzw_time;
+    stopwatch compress_time;
+
     for(int i=0; i<length; i += new_cdc_chunk->length){
 
-        cdc_new(&buffer[i],new_cdc_chunk,length,i);
-    
+        cdc_time.start();
+        CDC(&buffer[i],new_cdc_chunk,length,i);
+        cdc_time.stop();
+        Input_bytes += new_cdc_chunk->length;
+
         printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
 
+        sha_time.start();
         std::string SHA_result = SHA_384(new_cdc_chunk);
-        
+        sha_time.stop();
+
         uint32_t dup_chunk_num;
+        dedup_time.start();
+
         if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
+
+            dedup_time.stop();
             uint32_t header = 0;
             header |= (dup_chunk_num<<1); // 31 bits specify the number of the chunk to be duplicated
             header |= (0x1); // LSB 1 indicates this is a duplicate chunk
@@ -51,7 +68,11 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
            
             LZW_in_bytes += new_cdc_chunk->length;
 
+            lzw_time.start();
             std::vector<int> compressed_data = LZW_encoding(new_cdc_chunk);
+            lzw_time.stop();
+
+            compress_time.start();
             
             uint64_t compressed_size = ceil(13*compressed_data.size() / 8.0);
             header |= ( compressed_size <<1); /* size of the new chunk */
@@ -63,13 +84,23 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             // compress the lzw encoded data
             uint64_t compressed_length = compress(compressed_data);
 
+            compress_time.stop();
+            
+
             if(compressed_length != compressed_size){
-                std::cout << "Error: lengths not matching, calculated = " << compressed_size << ", return_val = " << std::endl;
+                std::cout << "Error: lengths not matching, calculated = " << compressed_size << ", return_val = " << compressed_length<< std::endl;
                 exit(1);
             }
             offset += compressed_length;
         }
     }
+
+    std::cout << "Total time for CDC = " << cdc_time.avg_latency() << "ns" << std::endl;
+    std::cout << "Total time for SHA = " << sha_time.avg_latency() << "ns" << std::endl;
+    std::cout << "Total time for Dedup = " << dedup_time.avg_latency() << "ns" << std::endl;
+    std::cout << "Total time for LZW Encoding = " << lzw_time.avg_latency() << "ns" << std::endl;
+    std::cout << "Total time for Compress = " << compress_time.avg_latency() << "ns" << std::endl;
+    
 }
 
 int main(int argc, char* argv[]) {
@@ -171,15 +202,17 @@ int main(int argc, char* argv[]) {
 
         writer++;
     }
+
+    total_time.stop();
     
     printf("Number of bytes going into LZW - %d \n",LZW_in_bytes);
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
     int bytes_written = fwrite(&file[0], 1, offset, outfd);
 
-    total_time.stop();
     std::cout << "Total runtime = " << total_time.avg_latency() << "ns" << std::endl;
-    std::cout << "Throughput = " << (bytes_written*8/1000000.0)/(total_time.avg_latency()/1000.0) << " Mb/s" << std::endl;
+    //std::cout << "Throughput = " << (Input_bytes*8/1000000.0)/(total_time.avg_latency()/1000.0) << " Mb/s" << std::endl;
+    std::cout << "Throughput = " << (Input_bytes*8/1000000.0)/(total_time.avg_latency()/1000.0) << " Mb/s" << std::endl;
 
     printf("write file with %d\n", bytes_written);
     fclose(outfd);

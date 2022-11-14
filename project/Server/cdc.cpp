@@ -21,8 +21,8 @@ uint64_t hash_func(unsigned char *input, unsigned int pos)
     return hash; 
 }
 
-    //For rolling hash 
-void cdc_new(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
+//For rolling hash 
+void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 {
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
     unsigned char *chunkStart = buff;

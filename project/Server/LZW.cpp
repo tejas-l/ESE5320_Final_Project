@@ -3,6 +3,11 @@
 extern int offset;
 extern unsigned char* file;
 
+
+/* defines for compress function */
+#define OUT_SIZE_BITS 8
+#define MIN(A,B) ( (A)<(B) ? (A) : (B) );
+
 std::vector<int> LZW_encoding(chunk_t* chunk)
 {
     std::cout << "Encoding\n";
@@ -43,15 +48,29 @@ uint64_t compress(std::vector<int> &compressed_data)
     uint64_t Length = 0;
     unsigned char Byte = 0;
 
-    for(int i=0; i< compressed_data.size(); i++){
-        int data = compressed_data[i];
+    uint8_t rem_inBytes = CODE_LENGTH;
+    uint8_t rem_outBytes = OUT_SIZE_BITS;
 
-        for(int j=0; j<CODE_LENGTH; j++){
-            Byte = (Byte << 1) | ((data >> (CODE_LENGTH - 1 - j)) & 1);
+    for(int i=0; i<compressed_data.size(); i++){
+        int inData = compressed_data[i];
+        rem_inBytes = CODE_LENGTH;
 
-            if(++Length % 8 == 0){
-                file[offset + Length/8 - 1] = Byte; // write data to temp array
+        while(rem_inBytes){
+
+            int read_bits = MIN(rem_inBytes,rem_outBytes);
+            //Byte = (Byte << read_bits) | (( inData >> (rem_inBytes - read_bits) ) & ((0x1 << read_bits) - 1));
+            Byte = (Byte << read_bits) | ( inData >> (rem_inBytes - read_bits) );
+
+            rem_inBytes -= read_bits;
+            rem_outBytes -= read_bits;
+            Length += read_bits;
+            //inData >>= read_bits;
+            inData &= ((0x1 << rem_inBytes) - 1);
+
+            if(rem_outBytes == 0){
+                file[offset + Length/8 - 1] = Byte;
                 Byte = 0;
+                rem_outBytes = OUT_SIZE_BITS;
             }
         }
     }
