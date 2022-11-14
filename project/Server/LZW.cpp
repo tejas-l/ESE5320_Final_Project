@@ -1,5 +1,6 @@
 #include "LZW.h"
 
+
 extern int offset;
 extern unsigned char* file;
 
@@ -8,16 +9,18 @@ extern unsigned char* file;
 #define OUT_SIZE_BITS 8
 #define MIN(A,B) ( (A)<(B) ? (A) : (B) );
 
-std::vector<int> LZW_encoding(chunk_t* chunk)
+//std::vector<int> LZW_encoding(chunk_t* chunk)
+uint64_t LZW_encoding(chunk_t* chunk)
 {
-    std::cout << "Encoding\n";
+    //std::cout << "Encoding\n";
+    LOG(LOG_INFO_1,"Encoding\n");
     std::unordered_map<std::string, int> table;
     for (int i = 0; i <= 255; i++) {
         std::string ch = "";
         ch += char(i);
         table[ch] = i;
     }
- 
+
     std::string p = "", c = "";
     p += chunk->start[0];
     int code = 256;
@@ -40,7 +43,17 @@ std::vector<int> LZW_encoding(chunk_t* chunk)
         c = "";
     }
     output_code.push_back(table[p]);
-    return output_code;
+    //return output_code;
+
+    int header = 0;
+    uint64_t compressed_size = ceil(13*output_code.size() / 8.0);
+    header |= ( compressed_size <<1); /* size of the new chunk */
+    header &= ~(0x1); /* lsb equals 0 signifies new chunk */
+    LOG(LOG_DEBUG,"Header written %x\n",header);
+    memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
+    offset += sizeof(header);
+
+    return compress(output_code);
 }
 
 uint64_t compress(std::vector<int> &compressed_data)
@@ -58,13 +71,11 @@ uint64_t compress(std::vector<int> &compressed_data)
         while(rem_inBytes){
 
             int read_bits = MIN(rem_inBytes,rem_outBytes);
-            //Byte = (Byte << read_bits) | (( inData >> (rem_inBytes - read_bits) ) & ((0x1 << read_bits) - 1));
             Byte = (Byte << read_bits) | ( inData >> (rem_inBytes - read_bits) );
 
             rem_inBytes -= read_bits;
             rem_outBytes -= read_bits;
             Length += read_bits;
-            //inData >>= read_bits;
             inData &= ((0x1 << rem_inBytes) - 1);
 
             if(rem_outBytes == 0){
