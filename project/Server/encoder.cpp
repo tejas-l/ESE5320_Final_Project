@@ -149,6 +149,7 @@ int main(int argc, char* argv[]) {
     server.setup_server(blocksize);
 
     int file_size = 14247; // 14247 bytes per second
+    uint64_t data_received_bytes = 0;
     stopwatch total_time;
 
 
@@ -163,6 +164,7 @@ int main(int argc, char* argv[]) {
     done = buffer[1] & DONE_BIT_L;
     length = buffer[0] | (buffer[1] << 8);
     length &= ~DONE_BIT_H;
+    data_received_bytes += length; // add the length of data received to the byte counter
     std::cout << " packet length " << length << std::endl;
 
     // printing takes time so be weary of transfer rate
@@ -194,6 +196,7 @@ int main(int argc, char* argv[]) {
         done = buffer[1] & DONE_BIT_L;
         length = buffer[0] | (buffer[1] << 8);
         length &= ~DONE_BIT_H;
+        data_received_bytes += length; // add the length of data received to the byte counter
 
         //printf("Start of Loop, packet size = %d\r\n",length);
         LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
@@ -210,15 +213,15 @@ int main(int argc, char* argv[]) {
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
     int bytes_written = fwrite(&file[0], 1, offset, outfd);
-    std::cout << "Average time for CDC = " << cdc_time.avg_latency() << "ms" << std::endl;
-    std::cout << "Average time for SHA = " << sha_time.avg_latency() << "ms" << std::endl;
-    std::cout << "Average time for Dedup = " << dedup_time.avg_latency() << "ms" << std::endl;
-    std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << std::endl;
+    std::cout << "Average time for CDC = " << cdc_time.avg_latency() << "ms" << " Total time = " << cdc_time.latency() << "ms" << std::endl;
+    std::cout << "Average time for SHA = " << sha_time.avg_latency() << "ms" << " Total time = " << sha_time.latency() << "ms" << std::endl;
+    std::cout << "Average time for Dedup = " << dedup_time.avg_latency() << "ms" << " Total time = " << dedup_time.latency() << "ms" << std::endl;
+    std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << " Total time = " << lzw_time.latency() << "ms" << std::endl;
     //std::cout << "Average time for Compress = " << compress_time.avg_latency() << "ns" << std::endl;
 
     std::cout << "Total runtime = " << total_time.latency() << "ms" << std::endl;
     float output_time = (total_time.latency()/1000.0);
-    std::cout << "Throughput = " << (file_size*8/1000000.0)/output_time << " Mb/s" << std::endl;
+    std::cout << "Throughput = " << (data_received_bytes*8/1000000.0)/output_time << " Mb/s" << std::endl;
 
     LOG(LOG_CRIT,"write file with %d\n", bytes_written);
     fclose(outfd);
