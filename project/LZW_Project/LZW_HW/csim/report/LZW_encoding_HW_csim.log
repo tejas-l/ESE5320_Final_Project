@@ -1,0 +1,33 @@
+INFO: [SIM 2] *************** CSIM start ***************
+INFO: [SIM 4] CSIM will launch GCC as the compiler.
+   Compiling ../../../../fpga/LZW_HW.cpp in debug mode
+   Generating csim.exe
+Encoding
+String	Output_Code	Addition
+W	87		WY	256
+Y	89		YS	257
+S	83		S*	258
+*	42		*W	259
+WY	256		WYG	260
+G	71		GW	261
+WY	256		WYS	262
+S*	258		S*W	263
+WYS	262		WYSW	264
+WYS	262		WYSG	265
+G	71
+
+11
+87
+89
+83
+42
+256
+71
+256
+258
+262
+262
+71
+TEST PASSED
+INFO: [SIM 1] CSim done with 0 errors.
+INFO: [SIM 3] *************** CSIM finish ***************

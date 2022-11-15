@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<autopilotfilemapping:AutoPilotFileMapping xmlns:autopilotfilemapping="www.autoesl.com/autopilotfilemapping">
+  <source>
+    <originFiles name="LZW_HW.cpp" path="/mnt/castor/seas_home/t/tejasl/ESE5320_tejasl/ESE5320_Final_Project/project/fpga/LZW_HW.cpp"/>
+    <originFiles name="LZW_HW.h" path="/mnt/castor/seas_home/t/tejasl/ESE5320_tejasl/ESE5320_Final_Project/project/fpga/LZW_HW.h"/>
+  </source>
+  <testbench>
+    <originFiles name="testbench.cpp" path="/mnt/castor/seas_home/t/tejasl/ESE5320_tejasl/ESE5320_Final_Project/project/fpga/testbench.cpp"/>
+  </testbench>
+</autopilotfilemapping:AutoPilotFileMapping>
