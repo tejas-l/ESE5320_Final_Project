@@ -12,10 +12,19 @@ unsigned int MurmurHash2(const unsigned char* data, int len, unsigned int seed) 
 	// const unsigned char* data = (const unsigned char *) &key;
 	const unsigned int m = 0x5bd1e995;
 	unsigned int h = seed ^ len;
+   while (len >= 4)
+   {
+       unsigned char k = data[len-1];
+
+       k *= m;
+		k ^= k >> 24;
+		k *= m;
+		h *= m;
+		h ^= k;
+		len--;
+   }
 	switch (len) {
-    case 4:
-        h ^= data[3] << 32;
-	case 3:
+    case 3:
 		h ^= data[2] << 16;
 	case 2:
 		h ^= data[1] << 8;
@@ -46,7 +55,7 @@ int Murmur_find(unsigned int hash_result,int code){
     return -1; 
 }
 
-//std::vector<int> LZW_encoding(chunk_t* chunk)
+
 void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* data_out)
 {
     unsigned char substring_array[ARR_SIZE]; 
@@ -54,24 +63,18 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* dat
     unsigned int input_index = 0;
     unsigned int output_index = 0; 
  
-    //std::cout << "Encoding\n";
-    // LOG(LOG_INFO_1,"Encoding\n");
-    // std::unordered_map<std::string, int> table;
+
 
 
     for (unsigned int i = 0; i <= 255; i++) {
-        // unsigned char ch = "";
-        // ch += char(i);
         table[i] = MurmurHash2((unsigned char*)&i,1,3); // Initialize Table 
     }
 
-    // unsigned char p = "", c = "";
-    // p += chunk->start[0];
     unsigned char c;
     substring_array[substring_arr_index++] = data_in[input_index]; // p += chunk->start[0]
 
     int code = 256;
-    //std::cout << "String\tOutput_Code\tAddition\n";
+
     for (unsigned int i = 0; i < len; i++) {
         #pragma HLS PIPELINE II=1
         if (i != len - 1){
@@ -80,26 +83,12 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* dat
         
         substring_array[substring_arr_index++] = c;
 
+
         unsigned int hash_result =  MurmurHash2(substring_array,substring_arr_index,3);
-        // printf("\n\n%d \n", hash_result);
-        // for(int i=0; i<substring_arr_index; i++){
-        //     printf("%c",substring_array[i]);
-        // }
-        //printf("\n");
+        //printf("\n\n%d \n", hash_result);
         //MurmurHash
         if (Murmur_find(hash_result,code) == -1 ) {
-
-            //printf("Not Found \n");
-            // for(int i=0; i<substring_arr_index-1; i++){
-            //     printf("%c",substring_array[i]);
-            // }
-            //printf("\n");
-            // p = p + c;
-               //std::cout << p << "\t" << table[p] << "\t\t"
-            //     << p + c << "\t" << code << std::endl;
-
             int out_data = Murmur_find( MurmurHash2(substring_array,substring_arr_index-1,3),code) ; /*function that returns index*/
-            //printf("\nout data = %d\n",out_data);
             data_out[output_index++] = out_data;
             table[code] = hash_result;  // Stores hash for p+c
             code++;
@@ -108,9 +97,8 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* dat
         }
 
     }
-    // output_code.push_back(table[p]);
 
-    //printf("\n entry 256 = %d\n",table[256]);
+
     int out_data = Murmur_find( MurmurHash2(substring_array,substring_arr_index,3),code) ; /*function that returns index*/
     data_out[output_index++] = out_data;
 
