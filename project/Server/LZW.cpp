@@ -1,4 +1,5 @@
 #include "LZW.h"
+#include "../fpga/LZW_HW.h"
 
 
 extern int offset;
@@ -98,3 +99,4 @@ uint64_t LZW_encoding(chunk_t* chunk)
 
     return compress(output_code);
 }
+

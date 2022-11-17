@@ -106,11 +106,11 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned char* ou
 
     //return output_code;
     unsigned int output_index = 0;
-    int header = 0;
-    uint64_t compressed_size = ceil(13*data_output_index / 8.0);
-    header |= ( compressed_size <<1); /* size of the new chunk */
+    uint32_t header = 0;
+    uint32_t compressed_size = ceil(13*data_output_index / 8.0);
+    //header |= ( compressed_size <<1); /* size of the new chunk */
 
-    ((unsigned int *)output)[0] = ( compressed_size <<1); //Writing the header
+    ((unsigned uint32_t *)output)[0] = ( compressed_size <<1); //Writing the header
     
 
     output_index += 4;

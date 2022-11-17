@@ -55,7 +55,7 @@ VPP_OPTS = --target hw
 CLIENT_SOURCES = Client/client.cpp
 CLIENT_EXE = client
 
-SERVER_SOURCES = Server/encoder.cpp Server/server.cpp Server/SHA_block.cpp Server/dedup.cpp Server/LZW.cpp Server/cdc.cpp#SHA_256_neon/SHA_256_neon.cpp
+SERVER_SOURCES = Server/encoder.cpp Server/server.cpp Server/SHA_block.cpp Server/dedup.cpp Server/LZW.cpp Server/cdc.cpp Server/Utilities.cpp#SHA_256_neon/SHA_256_neon.cpp
 SERVER_OBJECTS =$(SERVER_SOURCES:.cpp=.o)
 SERVER_EXE = encoder
 

@@ -1,11 +1,13 @@
 #ifndef _ENCODER_H_
 #define _ENCODER_H_
 
+
 #include "cdc.h"
 #include "SHA_block.h"
 #include "dedup.h"
 #include "LZW.h"
 #include "../common/common.h"
+#include "Utilities.h"
 
 
 // max number of elements we can get from ethernet

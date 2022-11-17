@@ -1,8 +1,13 @@
 #include "encoder.h"
 
+#define KERNEL_IN_SIZE 8*1024
+#define KERNEL_OUT_SIZE 8*1024
+
 
 int offset = 0;
 unsigned char* file;
+
+
 
 void handle_input(int argc, char* argv[], int* blocksize) {
     int x;
@@ -31,7 +36,21 @@ stopwatch lzw_time;
 
 void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 {
-
+    cl_int err;
+    //std::string binaryFile = argv[1];
+    std::string binaryFile = "LZW_encoding_HW.xclbin";
+    unsigned fileBufSize;
+    std::vector<cl::Device> devices = get_xilinx_devices();
+    devices.resize(1);
+    cl::Device device = devices[0];
+    cl::Context context(device, NULL, NULL, NULL, &err);
+    char *fileBuf = read_binary_file(binaryFile, fileBufSize);
+    cl::Program::Binaries bins{{fileBuf, fileBufSize}};
+    cl::Program program(context, devices, bins, NULL, &err);
+    cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
+    cl::Kernel krnl_LZW_HW(program, "LZW_encoding_HW", &err);
+    
+    
     for(int i=0; i<length; i += new_cdc_chunk->length){
 
         cdc_time.start();
@@ -70,11 +89,53 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
            
             LZW_in_bytes += new_cdc_chunk->length;
 
+            unsigned int* LZW_HW_output_length_ptr;
+
+            cl::Buffer in_buf = cl::Buffer(context, CL_MEM_READ_ONLY, KERNEL_IN_SIZE*sizeof(unsigned char), NULL, &err);
+            cl::Buffer out_buf = cl::Buffer(context, CL_MEM_WRITE_ONLY, KERNEL_OUT_SIZE*sizeof(unsigned char), NULL, &err);
+            cl::Buffer out_len = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(unsigned int), NULL, &err);
+
+            unsigned char* write_ptr = &file[offset];
+
+            new_cdc_chunk->start = (unsigned char *)q.enqueueMapBuffer(in_buf, CL_TRUE, CL_MAP_WRITE, 0, KERNEL_IN_SIZE*sizeof(unsigned char));
+            write_ptr = (unsigned char *)q.enqueueMapBuffer(out_buf, CL_TRUE, CL_MAP_READ, 0, KERNEL_OUT_SIZE*sizeof(unsigned char));
+            LZW_HW_output_length_ptr = (unsigned int *)q.enqueueMapBuffer(out_len, CL_TRUE, CL_MAP_READ, 0, sizeof(unsigned int));
+
+            std::vector<cl::Event> write_events_vec;
+            std::vector<cl::Event> execute_events_vec, read_events_vec;
+            cl::Event write_event, execute_event, read_event;
+
+            unsigned int HW_LZW_IN_LEN = new_cdc_chunk->length;
+
+
+    
+
             lzw_time.start();
             //std::vector<int> compressed_data = LZW_encoding(new_cdc_chunk);
-            uint64_t compressed_length = LZW_encoding(new_cdc_chunk);
+            //uint64_t compressed_length = LZW_encoding(new_cdc_chunk);
+            //KERNEL CALLS
+            krnl_LZW_HW.setArg(0, in_buf);
+            krnl_LZW_HW.setArg(1, HW_LZW_IN_LEN);
+            krnl_LZW_HW.setArg(2, out_buf);
+            krnl_LZW_HW.setArg(2, out_len);
+            q.enqueueMigrateMemObjects({in_buf}, 0 /* 0 means from host*/, NULL, &write_event);
+
+            write_events_vec.push_back(write_event);
+
+            q.enqueueTask(krnl_LZW_HW, &write_events_vec, &execute_event);
+            execute_events_vec.push_back(execute_event);
+
+            q.enqueueMigrateMemObjects({out_buf, out_len}, CL_MIGRATE_MEM_OBJECT_HOST /* 0 means from host*/, &execute_events_vec, &read_event);
+            read_events_vec.push_back(read_event);
+
+            q.finish();
+
+            
+            
 
             lzw_time.stop();
+
+            
 
             //compress_time.start();
             
@@ -96,7 +157,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             //     LOG(LOG_ERR,"Error on line %d: lengths not matching, calculated = %d, return_val = %d\n",__LINE__,compressed_size, compressed_length);
             //     exit(1);
             // }
-            offset += compressed_length;
+            offset += *LZW_HW_output_length_ptr;
         }
     }   
 }
@@ -166,6 +227,24 @@ int main(int argc, char* argv[]) {
     length &= ~DONE_BIT_H;
     data_received_bytes += length; // add the length of data received to the byte counter
     std::cout << " packet length " << length << std::endl;
+
+
+
+    //OpenCL Init
+
+    // cl_int err;
+    // //std::string binaryFile = argv[1];
+    // std::string binaryFile = "LZW_encoding_HW.xclbin";
+    // unsigned fileBufSize;
+    // std::vector<cl::Device> devices = get_xilinx_devices();
+    // devices.resize(1);
+    // cl::Device device = devices[0];
+    // cl::Context context(device, NULL, NULL, NULL, &err);
+    // char *fileBuf = read_binary_file(binaryFile, fileBufSize);
+    // cl::Program::Binaries bins{{fileBuf, fileBufSize}};
+    // cl::Program program(context, devices, bins, NULL, &err);
+    // cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
+    // cl::Kernel krnl_LZW_HW(program, "LZW_encoding_HW", &err);
 
     // printing takes time so be weary of transfer rate
 
