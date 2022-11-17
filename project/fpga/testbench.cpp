@@ -1,10 +1,77 @@
 #include <bits/stdc++.h>
 #include "LZW_HW.h"
 
+
 using namespace std;
+
+/* defines for compress function */
+#define OUT_SIZE_BITS 8
+#define MIN(A,B) ( (A)<(B) ? (A) : (B) );
+#define CODE_LENGTH 13
+
+
+
+std::vector<unsigned char> compress_test(std::vector<int> &compressed_data)
+{
+    std::vector<unsigned char> output_vector;
+    uint64_t Length = 0;
+    unsigned char Byte = 0;
+
+    uint8_t rem_inBytes = CODE_LENGTH;
+    uint8_t rem_outBytes = OUT_SIZE_BITS;
+
+
+    // for(int i=0; i<10;i++){
+    //     printf("Index = %d SW lzw res %d\n",i,compressed_data[i]);
+    // }
+
+    // for(int i=10; i>0;i--){
+    //     printf("Index = %d SW lzw res %d\n",compressed_data.size()-i,compressed_data[compressed_data.size()-i]);
+    // }
+
+    printf("compressed_data.size() = %d\n",compressed_data.size());
+    for(int i=0; i<compressed_data.size(); i++){
+        int inData = compressed_data[i];
+        rem_inBytes = CODE_LENGTH;
+
+        while(rem_inBytes){
+
+            int read_bits = MIN(rem_inBytes,rem_outBytes);
+            Byte = (Byte << read_bits) | ( inData >> (rem_inBytes - read_bits) );
+
+            rem_inBytes -= read_bits;
+            rem_outBytes -= read_bits;
+            // if(i>compressed_data.size()-10){
+            //     printf("\nSW Length loop = %d\n",Length);
+            // }
+            Length += read_bits;
+            inData &= ((0x1 << rem_inBytes) - 1);
+
+            if(rem_outBytes == 0){
+                //file[offset + Length/8 - 1] = Byte;
+                output_vector.push_back(Byte);
+                Byte = 0;
+                rem_outBytes = OUT_SIZE_BITS;
+            }
+        }
+    }
+
+    printf("SW length = %d\n",Length);
+    if(Length % 8 > 0){
+        Byte = Byte << (8 - (Length%8));
+        Length += (8 - (Length%8));
+        //file[offset + Length/8 - 1] = Byte;
+        output_vector.push_back(Byte);
+    }
+
+    printf("SW length = %d\n",Length);
+
+    return output_vector; // return number of bytes to be written to output file
+}
+
+
 vector<int> encoding(string s1)
 {
-    cout << "Encoding\n";
     unordered_map<string, int> table;
     for (int i = 0; i <= 255; i++) {
         string ch = "";
@@ -33,47 +100,51 @@ vector<int> encoding(string s1)
         }
         c = "";
     }
-    cout << p << "\t" << table[p] << endl;
     output_code.push_back(table[p]);
     return output_code;
 }
-string convertToString(char* a, int size)
-{
-    int i;
-    string s = "";
-    for (i = 0; i < size; i++) {
-        s = s + a[i];
-    }
-    return s;
-}
+
 
 int main()
-{   
-
+{    
     
     unsigned char input[300] = "The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
 
-
-    unsigned int test_output [1000]; 
+    unsigned char test_output [1000]; 
     string s = "The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+    //unsigned char input[300] = "WYS*WYGWYS*WYSWYSG";
+    //string s = "WYS*WYGWYS*WYSWYSG";
+
 
     //unsigned char HW_input[19] =  "WYS*WYGWYS*WYSWYSG";
-    vector<int> output_code = encoding(s);
-    printf("4\n");
-    LZW_encoding_HW(input,s.size(),test_output);
-    printf("5\n");
-    int Equal = 1; 
-    //printf("\n");
-    //printf("%d\n",output_code.size());
-    for(int i =0; i<output_code.size();i++){
 
-        //printf("%d\n",test_output[i]);
-        if(output_code[i] != test_output[i]){
-            Equal = 0; 
+    std::vector<int> encoding_out= encoding(s);
+    std::vector<unsigned char> output_code = compress_test(encoding_out);
+
+    unsigned int HW_output_length = 0;
+    LZW_encoding_HW(input,s.size(),test_output, &HW_output_length);
+    printf("\nChecking Starts\n");
+    int Equal = 1; 
+
+    if((HW_output_length - 4 )!= output_code.size()){
+        Equal = 0;
+        printf("\nLengths of SW and HW not matching");
+        printf("\nSW length = %d\n",output_code.size());
+        printf("\nHW length = %d\n",HW_output_length);
+    }
+    
+    for(int i = 0; i<output_code.size();i++){
+
+        if(output_code[i] != test_output[4+i]){
+            Equal = 0;
+            printf("mismatch at %d\n",i);
+            printf("SW value = %d\tHW value = %d\n",output_code[i],test_output[i]);
             //break;
         }
     }
-    printf("6\n");
+
+    printf("last_value SW = %d\tlast_value HW=%d\n",output_code[output_code.size()-1],test_output[HW_output_length-1]);
+    
 
 
     std::cout << "TEST " << (Equal ? "PASSED" : "FAILED") << std::endl;
