@@ -108,34 +108,43 @@ vector<int> encoding(string s1)
 int main()
 {    
     
-    unsigned char input[300] = "The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+    //unsigned char input[300] = "The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
 
-    unsigned char test_output [1000]; 
-    string s = "The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
-    //unsigned char input[300] = "WYS*WYGWYS*WYSWYSG";
-    //string s = "WYS*WYGWYS*WYSWYSG";
+    unsigned int *test_output = (unsigned int *)malloc(8192*sizeof(unsigned int));
+    //string s = "The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+    unsigned char *input = (unsigned char *)malloc(300*sizeof(unsigned char));//"WYS*WYGWYS*WYSWYSG";  
+    string s = "WYS*WYGWYS*WYSWYSG";
+    //memcpy(input,"WYS*WYGWYS*WYSWYSG",s.size());
+    for(int i=0; i<s.size();i++){
+        input[i] = s[i];
+    }
 
+    
 
     //unsigned char HW_input[19] =  "WYS*WYGWYS*WYSWYSG";
 
-    std::vector<int> encoding_out= encoding(s);
-    std::vector<unsigned char> output_code = compress_test(encoding_out);
+    //std::vector<int> encoding_out= encoding(s);
+    //std::vector<unsigned char> output_code = compress_test(encoding_out);
+    std::vector<int> output_code = encoding(s);
 
-    unsigned int HW_output_length = 0;
-    LZW_encoding_HW(input,s.size(),test_output, &HW_output_length);
+    printf("testbench sending input to hw\n");
+    for(int i=0; i<s.size(); i++){
+        printf("%c",input[i]);
+    }
+    unsigned int *HW_output_length = (unsigned int *)malloc(1*sizeof(unsigned int));
+    LZW_encoding_HW(input,s.size(),test_output, HW_output_length);
     printf("\nChecking Starts\n");
     int Equal = 1; 
 
-    if((HW_output_length - 4 )!= output_code.size()){
+    if((*HW_output_length)!= output_code.size()){
         Equal = 0;
         printf("\nLengths of SW and HW not matching");
         printf("\nSW length = %d\n",output_code.size());
-        printf("\nHW length = %d\n",HW_output_length);
+        printf("\nHW length = %d\n",*HW_output_length);
     }
     
     for(int i = 0; i<output_code.size();i++){
-
-        if(output_code[i] != test_output[4+i]){
+        if(output_code[i] != test_output[i]){
             Equal = 0;
             printf("mismatch at %d\n",i);
             printf("SW value = %d\tHW value = %d\n",output_code[i],test_output[i]);
@@ -143,13 +152,18 @@ int main()
         }
     }
 
-    printf("last_value SW = %d\tlast_value HW=%d\n",output_code[output_code.size()-1],test_output[HW_output_length-1]);
+    //printf("last_value SW = %d\tlast_value HW=%d\n",output_code[output_code.size()-1],test_output[HW_output_length-1]);
     
 
 
     std::cout << "TEST " << (Equal ? "PASSED" : "FAILED") << std::endl;
 
-     return Equal ? 0 : 1;
+
+    // free(test_output);
+    // free(input);
+    // free(HW_output_length);
+
+    return !Equal;
 
     // cout << "Output Codes are: ";
     // for (int i = 0; i < output_code.size(); i++) {

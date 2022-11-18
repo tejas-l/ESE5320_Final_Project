@@ -19,6 +19,10 @@ void handle_input(int argc, char* argv[], int* blocksize) {
                 *blocksize = atoi(optarg);
                 printf("blocksize is set to %d optarg\n", *blocksize);
                 break;
+            // case 'x':
+            //     binaryFile = optarg;
+            //     std::cout << "xclbin is set to "<< binaryFile << std::endl;
+            //     break;
             case ':':
                 printf("-%c without parameter\n", optopt);
                 break;
@@ -89,17 +93,29 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
            
             LZW_in_bytes += new_cdc_chunk->length;
 
-            unsigned int* LZW_HW_output_length_ptr;
+            unsigned int LZW_HW_output_length = 0;
+            unsigned int* LZW_HW_output_length_ptr = &LZW_HW_output_length;
+            size_t in_buf_size = new_cdc_chunk->length*sizeof(unsigned char);
+            size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
+            size_t out_len_size = sizeof(unsigned int);
 
-            cl::Buffer in_buf = cl::Buffer(context, CL_MEM_READ_ONLY, KERNEL_IN_SIZE*sizeof(unsigned char), NULL, &err);
-            cl::Buffer out_buf = cl::Buffer(context, CL_MEM_WRITE_ONLY, KERNEL_OUT_SIZE*sizeof(unsigned char), NULL, &err);
-            cl::Buffer out_len = cl::Buffer(context, CL_MEM_WRITE_ONLY, sizeof(unsigned int), NULL, &err);
+            cl::Buffer in_buf = cl::Buffer(context, CL_MEM_READ_ONLY, in_buf_size, NULL, &err);
+            cl::Buffer out_buf = cl::Buffer(context, CL_MEM_WRITE_ONLY, out_buf_size, NULL, &err);
+            cl::Buffer out_len = cl::Buffer(context, CL_MEM_WRITE_ONLY, out_len_size, NULL, &err);
 
             unsigned char* write_ptr = &file[offset];
 
-            new_cdc_chunk->start = (unsigned char *)q.enqueueMapBuffer(in_buf, CL_TRUE, CL_MAP_WRITE, 0, KERNEL_IN_SIZE*sizeof(unsigned char));
-            write_ptr = (unsigned char *)q.enqueueMapBuffer(out_buf, CL_TRUE, CL_MAP_READ, 0, KERNEL_OUT_SIZE*sizeof(unsigned char));
-            LZW_HW_output_length_ptr = (unsigned int *)q.enqueueMapBuffer(out_len, CL_TRUE, CL_MAP_READ, 0, sizeof(unsigned int));
+            unsigned char* to_fpga = (unsigned char*)malloc(KERNEL_IN_SIZE*sizeof(unsigned char));
+            unsigned char* from_fpga = (unsigned char*)malloc(KERNEL_OUT_SIZE*sizeof(unsigned char));
+
+            memcpy(to_fpga,new_cdc_chunk->start,new_cdc_chunk->length);
+
+            //unsigned char* to_fpga_ptr = &to_fpga[0];
+            //unsigned char* from_fpga_ptr = &from_fpga[0];
+
+            to_fpga = (unsigned char *)q.enqueueMapBuffer(in_buf, CL_TRUE, CL_MAP_WRITE, 0, in_buf_size);
+            from_fpga = (unsigned char *)q.enqueueMapBuffer(out_buf, CL_TRUE, CL_MAP_READ, 0, out_buf_size);
+            LZW_HW_output_length_ptr = (unsigned int *)q.enqueueMapBuffer(out_len, CL_TRUE, CL_MAP_READ, 0, out_len_size);
 
             std::vector<cl::Event> write_events_vec;
             std::vector<cl::Event> execute_events_vec, read_events_vec;
@@ -117,7 +133,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             krnl_LZW_HW.setArg(0, in_buf);
             krnl_LZW_HW.setArg(1, HW_LZW_IN_LEN);
             krnl_LZW_HW.setArg(2, out_buf);
-            krnl_LZW_HW.setArg(2, out_len);
+            krnl_LZW_HW.setArg(3, out_len);
             q.enqueueMigrateMemObjects({in_buf}, 0 /* 0 means from host*/, NULL, &write_event);
 
             write_events_vec.push_back(write_event);
@@ -138,12 +154,16 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             
 
             //compress_time.start();
+
+            LOG(LOG_CRIT,"OUTPUT LENGTH RETURNED BY KERNEL %d\n",*LZW_HW_output_length_ptr);
+
+            memcpy(&file[offset],from_fpga,*LZW_HW_output_length_ptr);
             
-            // uint64_t compressed_size = ceil(13*compressed_data.size() / 8.0);
-            // header |= ( compressed_size <<1); /* size of the new chunk */
-            // header &= ~(0x1); /* lsb equals 0 signifies new chunk */
-            // LOG(LOG_DEBUG,"Header written %x\n",header);
-            // memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
+            uint64_t compressed_size = *LZW_HW_output_length_ptr;
+            header |= ( compressed_size <<1); /* size of the new chunk */
+            header &= ~(0x1); /* lsb equals 0 signifies new chunk */
+            LOG(LOG_CRIT,"Header written %x\n",header);
+            memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
             // offset += sizeof(header);
 
             // // compress the lzw encoded data
@@ -157,7 +177,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
             //     LOG(LOG_ERR,"Error on line %d: lengths not matching, calculated = %d, return_val = %d\n",__LINE__,compressed_size, compressed_length);
             //     exit(1);
             // }
-            offset += *LZW_HW_output_length_ptr;
+            offset += LZW_HW_output_length;
         }
     }   
 }
@@ -177,6 +197,9 @@ int main(int argc, char* argv[]) {
 
     // default is 2k
     int blocksize = BLOCKSIZE;
+
+    // xclbin name
+    
 
     // set blocksize if decalred through command line
     handle_input(argc, argv, &blocksize);
