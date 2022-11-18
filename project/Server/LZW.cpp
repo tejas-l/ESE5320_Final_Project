@@ -12,7 +12,8 @@ extern unsigned char* file;
 
 
 
-uint64_t compress(std::vector<int> &compressed_data)
+//uint64_t compress(std::vector<int> &compressed_data)
+uint64_t compress(unsigned int *compressed_data, int compressed_data_len)
 {
     uint64_t Length = 0;
     unsigned char Byte = 0;
@@ -20,7 +21,7 @@ uint64_t compress(std::vector<int> &compressed_data)
     uint8_t rem_inBytes = CODE_LENGTH;
     uint8_t rem_outBytes = OUT_SIZE_BITS;
 
-    for(int i=0; i<compressed_data.size(); i++){
+    for(int i=0; i<compressed_data_len; i++){
         int inData = compressed_data[i];
         rem_inBytes = CODE_LENGTH;
 
@@ -54,49 +55,49 @@ uint64_t compress(std::vector<int> &compressed_data)
 
 
 //std::vector<int> LZW_encoding(chunk_t* chunk)
-uint64_t LZW_encoding(chunk_t* chunk)
-{
-    //std::cout << "Encoding\n";
-    LOG(LOG_INFO_1,"Encoding\n");
-    std::unordered_map<std::string, int> table;
-    for (int i = 0; i <= 255; i++) {
-        std::string ch = "";
-        ch += char(i);
-        table[ch] = i;
-    }
+// uint64_t LZW_encoding(chunk_t* chunk)
+// {
+//     //std::cout << "Encoding\n";
+//     LOG(LOG_INFO_1,"Encoding\n");
+//     std::unordered_map<std::string, int> table;
+//     for (int i = 0; i <= 255; i++) {
+//         std::string ch = "";
+//         ch += char(i);
+//         table[ch] = i;
+//     }
 
-    std::string p = "", c = "";
-    p += chunk->start[0];
-    int code = 256;
-    std::vector<int> output_code;
-    //std::cout << "String\tOutput_Code\tAddition\n";
-    for (unsigned int i = 0; i < chunk->length; i++) {
-        if (i != chunk->length - 1)
-            c += chunk->start[i + 1];
-        if (table.find(p + c) != table.end()) {
-            p = p + c;
-        }
-        else {
-            //std::cout << p << "\t" << table[p] << "\t\t"
-            //     << p + c << "\t" << code << std::endl;
-            output_code.push_back(table[p]);
-            table[p + c] = code;
-            code++;
-            p = c;
-        }
-        c = "";
-    }
-    output_code.push_back(table[p]);
-    //return output_code;
+//     std::string p = "", c = "";
+//     p += chunk->start[0];
+//     int code = 256;
+//     std::vector<int> output_code;
+//     //std::cout << "String\tOutput_Code\tAddition\n";
+//     for (unsigned int i = 0; i < chunk->length; i++) {
+//         if (i != chunk->length - 1)
+//             c += chunk->start[i + 1];
+//         if (table.find(p + c) != table.end()) {
+//             p = p + c;
+//         }
+//         else {
+//             //std::cout << p << "\t" << table[p] << "\t\t"
+//             //     << p + c << "\t" << code << std::endl;
+//             output_code.push_back(table[p]);
+//             table[p + c] = code;
+//             code++;
+//             p = c;
+//         }
+//         c = "";
+//     }
+//     output_code.push_back(table[p]);
+//     //return output_code;
 
-    int header = 0;
-    uint64_t compressed_size = ceil(13*output_code.size() / 8.0);
-    header |= ( compressed_size <<1); /* size of the new chunk */
-    header &= ~(0x1); /* lsb equals 0 signifies new chunk */
-    LOG(LOG_DEBUG,"Header written %x\n",header);
-    memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
-    offset += sizeof(header);
+//     int header = 0;
+//     uint64_t compressed_size = ceil(13*output_code.size() / 8.0);
+//     header |= ( compressed_size <<1); /* size of the new chunk */
+//     header &= ~(0x1); /* lsb equals 0 signifies new chunk */
+//     LOG(LOG_DEBUG,"Header written %x\n",header);
+//     memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
+//     offset += sizeof(header);
 
-    return compress(output_code);
-}
+//     return compress(output_code);
+// }
 
