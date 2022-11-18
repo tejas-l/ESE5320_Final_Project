@@ -146,12 +146,12 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk)
 
             q.finish();
 
-            
-            
+
+
 
             lzw_time.stop();
-
             
+
 
             //compress_time.start();
 
