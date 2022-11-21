@@ -12,6 +12,6 @@
 
 // uint64_t compress(std::vector<int> &compressed_data);
 //std::vector<int> LZW_encoding(chunk_t* chunk);
-void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned char* output, unsigned int* Output_length); 
+void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* data_out, unsigned int* Output_length); 
 
 #endif
