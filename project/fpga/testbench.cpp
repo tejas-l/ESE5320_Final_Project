@@ -7,7 +7,7 @@
 
 using namespace std;
 
-vector<int> LZW_SW(string s1)
+vector<unsigned int> LZW_SW(string s1)
 {
     cout << "Encoding\n";
     unordered_map<string, int> table;
@@ -20,7 +20,7 @@ vector<int> LZW_SW(string s1)
     string p = "", c = "";
     p += s1[0];
     int code = 256;
-    vector<int> output_code;
+    vector<unsigned int> output_code;
     cout << "String\tOutput_Code\tAddition\n";
     for (int i = 0; i < s1.length(); i++) {
         if (i != s1.length() - 1)
@@ -43,7 +43,7 @@ vector<int> LZW_SW(string s1)
     return output_code;
 }
 
-std::vector<unsigned char> compress(std::vector<int> &compressed_data)
+std::vector<unsigned char> compress(std::vector<unsigned int> &compressed_data)
 {
     uint64_t Length = 0;
     unsigned char Byte = 0;
@@ -86,12 +86,12 @@ std::vector<unsigned char> compress(std::vector<int> &compressed_data)
 }
 
 
-bool compare_outputs(vector<unsigned char> sw_output_code, unsigned char *hw_output_code)
+bool compare_outputs(vector<unsigned int> sw_output_code, unsigned int *hw_output_code, uint32_t length)
 {
     bool Equal = true;
-    for (int i=0; i<sw_output_code.size(); i++)
+    for (int i=0; i<length; i++)
     {
-        if(sw_output_code[i] != hw_output_code[i+4 ])
+        if(sw_output_code[i] != hw_output_code[i])
         {
             cout<<"Element="<< i <<" SW out code: "<<sw_output_code[i]<<" HW out code: "<<hw_output_code[i]<<'\n';
             Equal = false;
@@ -105,21 +105,21 @@ int main()
     // string test_string ="The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
     string test_string = "gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGG";
    
-    unsigned char* s_char = (uint8_t*)calloc(500,sizeof(uint8_t));
-    unsigned char* hw_output_code = (unsigned char*)calloc(8192, sizeof(unsigned char));
+    unsigned char* string_s = (uint8_t*)calloc(500,sizeof(uint8_t));
+    unsigned int* hw_output_code = (unsigned int*)calloc(8192, sizeof(unsigned int));
 
     for(int i = 0; i < test_string.size(); i++)
     {
-        s_char[i] = test_string[i];
+        string_s[i] = test_string[i];
     }
 
     uint32_t* output_code_size = (uint32_t*)calloc(1,sizeof(uint32_t));
 
-    LZW_encoding_HW(s_char,test_string.size(), hw_output_code, output_code_size);
-    vector<int> sw_output_code = LZW_SW(test_string);
+    LZW_encoding_HW(string_s,test_string.size(), hw_output_code, output_code_size);
+    vector<unsigned int> sw_output_code = LZW_SW(test_string);
 
-    std::vector<unsigned char> sw_out = compress(sw_output_code);
+    //std::vector<unsigned char> sw_out = compress(sw_output_code);
 
-    bool Equal = compare_outputs(sw_out, hw_output_code);
+    bool Equal = compare_outputs(sw_output_code, hw_output_code, *output_code_size );
     std::cout << "TEST " << (Equal ? "PASSED" : "FAILED") << std::endl;
 }
