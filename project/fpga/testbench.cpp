@@ -52,6 +52,19 @@ std::vector<unsigned char> compress(std::vector<unsigned int> &compressed_data)
     uint8_t rem_inBytes = CODE_LENGTH;
     uint8_t rem_outBytes = OUT_SIZE_BITS;
 
+    uint32_t output_size = compressed_data.size();
+
+    std::cout <<"SW out length = " << compressed_data.size() << std::endl;
+
+    output_size = output_size<<1;
+
+    uint32_t header = ceil(13*(output_size) / 8.0);
+    
+    output_vector.push_back((char)(header & 0xFF));
+    output_vector.push_back((char)((header>>8) & 0xFF));
+    output_vector.push_back((char)((header>>16) & 0xFF));
+    output_vector.push_back((char)((header>>24) & 0xFF));
+
     for(int i=0; i<compressed_data.size(); i++){
         int inData = compressed_data[i];
         rem_inBytes = CODE_LENGTH;
@@ -86,14 +99,16 @@ std::vector<unsigned char> compress(std::vector<unsigned int> &compressed_data)
 }
 
 
-bool compare_outputs(vector<unsigned int> sw_output_code, unsigned int *hw_output_code, uint32_t length)
+bool compare_outputs(vector<unsigned char> sw_output_code, unsigned char *hw_output_code, uint32_t length)
 {
     bool Equal = true;
     for (int i=0; i<length; i++)
     {
         if(sw_output_code[i] != hw_output_code[i])
         {
-            cout<<"Element="<< i <<" SW out code: "<<sw_output_code[i]<<" HW out code: "<<hw_output_code[i]<<'\n';
+            //cout<<"Element="<< i <<" SW out code: "<<sw_output_code[i]<<" HW out code: "<<hw_output_code[i]<<std::endl;
+            printf("Element = %d  SW out: %x  HW out: %x \n",i,sw_output_code[i],hw_output_code[i]);
+
             Equal = false;
         }
     }
@@ -106,7 +121,7 @@ int main()
     string test_string = "gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGG";
    
     unsigned char* string_s = (uint8_t*)calloc(500,sizeof(uint8_t));
-    unsigned int* hw_output_code = (unsigned int*)calloc(8192, sizeof(unsigned int));
+    unsigned char* hw_output_code = (unsigned char*)calloc(8192, sizeof(unsigned char));
 
     for(int i = 0; i < test_string.size(); i++)
     {
@@ -118,8 +133,8 @@ int main()
     LZW_encoding_HW(string_s,test_string.size(), hw_output_code, output_code_size);
     vector<unsigned int> sw_output_code = LZW_SW(test_string);
 
-    //std::vector<unsigned char> sw_out = compress(sw_output_code);
+    std::vector<unsigned char> sw_out = compress(sw_output_code);
 
-    bool Equal = compare_outputs(sw_output_code, hw_output_code, *output_code_size );
+    bool Equal = compare_outputs(sw_out, hw_output_code, *output_code_size );
     std::cout << "TEST " << (Equal ? "PASSED" : "FAILED") << std::endl;
 }

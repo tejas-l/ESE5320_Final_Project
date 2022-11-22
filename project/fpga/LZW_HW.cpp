@@ -69,12 +69,12 @@ int Murmur_find(uint64_t hash_result,int code, uint64_t* table){
 }
 
 
-void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* data_out, unsigned int* Output_length )//changed output array datatype
+void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned char* output, unsigned int* Output_length )//changed output array datatype
 {
 
 
 #pragma HLS INTERFACE m_axi depth=8192 port=data_in bundle=p0
-#pragma HLS INTERFACE m_axi depth=8192 port=data_out bundle=p1
+#pragma HLS INTERFACE m_axi depth=8192 port=output bundle=p1
 
 
     uint64_t table[ARR_SIZE] = {0};
@@ -82,21 +82,16 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* dat
     unsigned int  substring_arr_index = 0;
     unsigned int input_index = 0;
     unsigned int data_output_index = 0; 
-    //unsigned int data_out[ARR_SIZE];
+    unsigned int data_out[ARR_SIZE];
 
     for(unsigned int i = 0; i < ARR_SIZE; i++){
         #pragma HLS PIPELINE II=1
         #pragma HLS UNROLL FACTOR=2
 		table[i] = 0;
-		//data_out[i] = -1;
+		data_out[i] = 0;
 		substring_array[i] = 0;
     }
 
-//    printf("\n");
-//    for(int i=0; i<len; i++){
-//    	printf("%c",data_in[i]);
-//    }
-//    printf("\n");
 
     for (unsigned int i = 0; i <= 255; i++) {
         unsigned char ch = char(i);
@@ -139,8 +134,59 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned int* dat
 
     data_output_index++;
 
+    uint64_t Length = 0;
+    unsigned char Byte = 0;
+    uint64_t output_index = 0;
+    printf("HW out length = %d\n",data_output_index);
 
-    *Output_length = data_output_index;
+    uint32_t header = 0;
+    uint64_t compressed_size = ceil(13*(data_output_index) / 8.0);
+    header = ( compressed_size <<1); /* size of the new chunk */
+
+    output[output_index++] = header & 0xFF;
+    output[output_index++] = (header >> 8) & 0xFF; 
+    output[output_index++] = (header >> 16) & 0xFF;
+    output[output_index++] = (header >> 24) & 0xFF;
+
+    uint8_t rem_inBytes = CODE_LENGTH;
+    uint8_t rem_outBytes = OUT_SIZE_BITS;
+
+    for(int i=0; i<data_output_index; i++){
+        int inData = data_out[i];
+        rem_inBytes = CODE_LENGTH;
+
+        while(rem_inBytes){
+
+            int read_bits = MIN(rem_inBytes,rem_outBytes);
+            Byte = (Byte << read_bits) | ( inData >> (rem_inBytes - read_bits) );
+
+            rem_inBytes -= read_bits;
+            rem_outBytes -= read_bits;
+            Length += read_bits;
+            inData &= ((0x1 << rem_inBytes) - 1);
+
+            if(rem_outBytes == 0){
+                // file[offset + Length/8 - 1] = Byte;
+                //output_vector.push_back(Byte);
+                output[output_index++] = Byte; 
+                Byte = 0;
+                rem_outBytes = OUT_SIZE_BITS;
+            }
+        }
+    }
+
+    if(Length % 8 > 0){
+        Byte = Byte << (8 - (Length%8));
+        Length += (8 - (Length%8));
+        // file[offset + Length/8 - 1] = Byte;
+        //output_vector.push_back(Byte);
+        output[output_index++] = Byte;
+    }
+
+    //return output_vector;
+
+
+    *Output_length = output_index;
 
     return;
 }

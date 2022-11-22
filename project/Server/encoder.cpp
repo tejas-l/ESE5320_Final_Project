@@ -30,7 +30,7 @@ class LZW_kernel_call
                         size_t in_buf_size,
                         unsigned char* to_fpga,
                         size_t out_buf_size,
-                        unsigned int* from_fpga,
+                        unsigned char* from_fpga,
                         size_t out_len_size,
                         unsigned int* LZW_HW_output_length_ptr){
         cl_int err;
@@ -69,7 +69,7 @@ class LZW_kernel_call
 };
 
 
-void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel, unsigned int* from_fpga);
+void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel);
 
 int offset = 0;
 unsigned char* file;
@@ -99,7 +99,7 @@ stopwatch dedup_time;
 stopwatch lzw_time;
 //stopwatch compress_time;
 
-void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel, unsigned int* from_fpga)
+void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel)
 {
 
     for(int i=0; i<length; i += new_cdc_chunk->length){
@@ -146,7 +146,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk,
 
             unsigned int LZW_HW_output_length = 0;
             size_t in_buf_size = new_cdc_chunk->length*sizeof(unsigned char);
-            size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned int);
+            size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
             size_t out_len_size = sizeof(unsigned int);
 
             //unsigned char* to_fpga = (unsigned char*)calloc(new_cdc_chunk->length,sizeof(unsigned char));
@@ -156,17 +156,17 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk,
 
             //memcpy(to_fpga,new_cdc_chunk->start,new_cdc_chunk->length);
 
-            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_cdc_chunk->start, out_buf_size, from_fpga, out_len_size, LZW_HW_output_length_ptr);
+            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_cdc_chunk->start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
 
-            int header = 0;
-            uint64_t compressed_size = ceil(13*(*LZW_HW_output_length_ptr) / 8.0);
-            header |= ( compressed_size <<1); /* size of the new chunk */
-            header &= ~(0x1); /* lsb equals 0 signifies new chunk */
-            LOG(LOG_DEBUG,"Header written %x\n",header);
-            memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
-            offset += sizeof(header);   
+            // int header = 0;
+            // uint64_t compressed_size = ceil(13*(*LZW_HW_output_length_ptr) / 8.0);
+            // header |= ( compressed_size <<1); /* size of the new chunk */
+            // header &= ~(0x1); /* lsb equals 0 signifies new chunk */
+            // LOG(LOG_DEBUG,"Header written %x\n",header);
+            // memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
+            // offset += sizeof(header);   
 
-            uint64_t compressed_length = compress(from_fpga,*LZW_HW_output_length_ptr);
+            // uint64_t compressed_length = compress(from_fpga,*LZW_HW_output_length_ptr);
 
             lzw_time.stop();
 
@@ -190,7 +190,7 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk,
             //     LOG(LOG_ERR,"Error on line %d: lengths not matching, calculated = %d, return_val = %d\n",__LINE__,compressed_size, compressed_length);
             //     exit(1);
             // }
-            offset += compressed_length;
+            offset += *LZW_HW_output_length_ptr;
         }
     }   
 }
@@ -279,11 +279,11 @@ int main(int argc, char* argv[]) {
 
     LZW_kernel_call LZW_kernel_call(context, program, q);
 
-    unsigned int* from_fpga = (unsigned int*)calloc(KERNEL_OUT_SIZE,sizeof(unsigned int));
+    //unsigned int* from_fpga = (unsigned int*)calloc(KERNEL_OUT_SIZE,sizeof(unsigned int));
 
     total_time.start();
 
-    compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call, from_fpga);
+    compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call);
 
     //offset += length;
     writer++;
@@ -313,7 +313,7 @@ int main(int argc, char* argv[]) {
         //printf("Start of Loop, packet size = %d\r\n",length);
         LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
 
-        compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call, from_fpga);
+        compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call);
 
         writer++;
     }
@@ -354,6 +354,7 @@ int main(int argc, char* argv[]) {
     float input_throughput = (Input_bytes * 8 / 1000000.0) / ethernet_latency; // Mb/s
     std::cout << "Input Throughput to Encoder: " << input_throughput << " Mb/s."
             << " (Latency: " << ethernet_latency << "s)." << std::endl;
+
 
     return 0;
 }
