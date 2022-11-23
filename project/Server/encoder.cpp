@@ -36,6 +36,20 @@ void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, c
     CDC_packet_level(new_packet);
     cdc_time.stop();
     // Input_bytes += new_chunk->length;
+    
+    LOG(LOG_CRIT,"NUM CHUNKS = %d \n",new_packet->num_chunks);
+
+    // sha_time.start();
+    // SHA256_NEON_packet_level(new_packet);
+    // sha_time.stop();
+
+    // printf("SHA result - \n");
+    // for(int j = 0; j<32; j++){
+    //     printf("%02x",new_packet->chunk_list[0].SHA_signature[j]);
+    // }
+    // printf("\n");
+
+    // LOG(LOG_CRIT,"NUM CHUNKS = %d \n",new_packet->num_chunks);
 
     chunk_t *chunklist_ptr = new_packet->chunk_list;
 
@@ -44,14 +58,15 @@ void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, c
 
         new_chunk = &chunklist_ptr[i];
 
-        //printf("Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
-        LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
-
         sha_time.start();
-        SHA256_NEON(new_chunk);//SHA_384(new_chunk);
+        SHA256_NEON(new_chunk);
         sha_time.stop();
 
-        std::string SHA_result(new_chunk->SHA_signature);
+        //printf("Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
+        // LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
+
+
+        //std::string SHA_result(new_chunk->SHA_signature);
 
         uint32_t dup_chunk_num;
         dedup_time.start();

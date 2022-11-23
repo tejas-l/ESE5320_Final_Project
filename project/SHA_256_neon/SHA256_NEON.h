@@ -35,6 +35,15 @@
 #include <cstring>
 
 
+#define NUM_PACKETS 8
+#define pipe_depth 4
+#define DONE_BIT_L (1 << 7)
+#define DONE_BIT_H (1 << 15)
+#define WIN_SIZE 16
+#define MAX_CHUNK_SIZE 8*1024 // 8KB max chunk size
+#define MIN_CHUNK_SIZE 16 // 16 bytes min chunk size
+#define MAX_PACKET_SIZE 8*1024
+
 // Uncomment while compiling on board
 
 // /* data type for chunk */
@@ -47,11 +56,22 @@
 //     uint32_t chunk_num_total;
 // } chunk_t;
 
+// /* data type for passing packet with chunk list */
+// typedef struct packet{
+//     chunk_t chunk_list[MAX_PACKET_SIZE / MIN_CHUNK_SIZE];
+//     unsigned char *buffer;
+//     int length;
+//     uint64_t num_chunks;
+// } packet_t;
+
+
 void SHA256_comp(uint32x4_t MSG0, uint32x4_t MSG1, uint32x4_t MSG2, uint32x4_t MSG3, uint32x4_t* STATE0, uint32x4_t* STATE1, uint32x4_t *ABEF_SAVE,uint32x4_t *CDGH_SAVE);
 
 void sha256_process_arm(uint32_t state[8], const uint8_t data[], uint32_t length);
 
 void SHA256_NEON(chunk_t *chunk);
+
+void SHA256_NEON_packet_level(packet_t *new_packet);
 
 #if defined(__arm__) || defined(__aarch32__) || defined(__arm64__) || defined(__aarch64__) || defined(_M_ARM)
 # if defined(__GNUC__)

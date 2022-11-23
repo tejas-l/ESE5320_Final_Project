@@ -43,10 +43,11 @@
 typedef struct chunk{
     unsigned char *start;
     unsigned int length;
-    std::string SHA_signature; 
+    std::string SHA_signature;
     uint32_t number; 
     //CHANGE
     uint32_t chunk_num_total;
+    uint8_t is_duplicate;
 } chunk_t;
 
 

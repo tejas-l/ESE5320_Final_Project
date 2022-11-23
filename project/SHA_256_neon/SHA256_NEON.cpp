@@ -262,3 +262,34 @@ void SHA256_NEON(chunk_t *chunk)//, wc_Sha3* sha3_384)
     std::string shaString(reinterpret_cast<char*>(shaChar), 32);
     chunk->SHA_signature = shaString;
 }
+
+void SHA256_NEON_packet_level(packet_t *new_packet)
+{
+	uint8_t shaChar[32]={0};
+    uint32_t num_chunks = new_packet->num_chunks;
+    chunk_t *chunk_list_ptr = new_packet->chunk_list;
+
+    for(int c=0; c<num_chunks; c++){
+
+        /* initial state */
+        uint32_t state[8] = {
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+        };
+
+        sha256_process_arm(state, chunk_list_ptr[c].start, chunk_list_ptr[c].length);
+
+        for(int i=0; i<8 ; i++)
+        {
+            for (int j=0; j<=3; j++)
+            {
+                shaChar[(i<<2)+j] = state[i]>>((3-j)<<3);
+            }
+        }
+
+        std::string shaString(reinterpret_cast<char*>(shaChar), 32);
+        chunk_list_ptr[c].SHA_signature = shaString;
+    }
+
+    return;
+}
