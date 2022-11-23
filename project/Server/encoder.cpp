@@ -1,72 +1,6 @@
 #include "encoder.h"
 
-#define KERNEL_IN_SIZE 8*1024
-#define KERNEL_OUT_SIZE 8*1024
 
-
-class LZW_kernel_call
-{
-    cl::Kernel          kernel;
-    cl::CommandQueue    q;
-    cl::Buffer          in_buf;
-    cl::Buffer          out_buf;
-    cl::Buffer          out_len;
-    cl::Context         context;
-
-    public:
-    LZW_kernel_call(cl::Context &context_1, 
-                    cl::Program &program, 
-                    cl::CommandQueue &queue){
-        cl_int err;
-
-        q = queue;
-        context = context_1;
-        OCL_CHECK(err, kernel = cl::Kernel(program, "LZW_encoding_HW", &err));
-
-        
-    };
-
-    void LZW_kernel_run(unsigned int HW_LZW_IN_LEN,
-                        size_t in_buf_size,
-                        unsigned char* to_fpga,
-                        size_t out_buf_size,
-                        unsigned char* from_fpga,
-                        size_t out_len_size,
-                        unsigned int* LZW_HW_output_length_ptr){
-        cl_int err;
-        OCL_CHECK(err, in_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, in_buf_size, to_fpga, &err ));
-        OCL_CHECK(err, out_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_buf_size, from_fpga, &err ));
-        OCL_CHECK(err, out_len = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_len_size, LZW_HW_output_length_ptr, &err ));
-        
-        std::vector<cl::Event> write_events_vec;
-        std::vector<cl::Event> execute_events_vec, read_events_vec;
-        cl::Event write_event, execute_event, read_event;
-
-        OCL_CHECK(err, err = kernel.setArg(0, in_buf));
-        OCL_CHECK(err, err = kernel.setArg(1, HW_LZW_IN_LEN));
-        OCL_CHECK(err, err = kernel.setArg(2, out_buf));
-        OCL_CHECK(err, err = kernel.setArg(3, out_len));
-
-
-        OCL_CHECK(err, err = q.enqueueMigrateMemObjects({in_buf}, 0 /* 0 means from host*/, &read_events_vec, &write_event));
-        
-        write_events_vec.push_back(write_event);
-
-        OCL_CHECK(err, err = q.enqueueTask(kernel, &write_events_vec, &execute_event));
-        
-        execute_events_vec.push_back(execute_event);
-
-        OCL_CHECK(err, err = q.enqueueMigrateMemObjects({out_buf, out_len}, CL_MIGRATE_MEM_OBJECT_HOST /* 0 means from host*/, &execute_events_vec, &read_event));
-    
-        read_event.wait();
-        read_events_vec.push_back(read_event);
-
-        q.finish();
-
-    }
-
-
-};
 
 
 void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel);
@@ -113,13 +47,15 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk,
         LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
 
         sha_time.start();
-        std::string SHA_result = SHA_384(new_cdc_chunk);
+        SHA256_NEON(new_cdc_chunk);//SHA_384(new_cdc_chunk);
         sha_time.stop();
+
+        std::string SHA_result(new_cdc_chunk->SHA_signature);
 
         uint32_t dup_chunk_num;
         dedup_time.start();
 
-        if((dup_chunk_num = dedup(SHA_result,new_cdc_chunk))){
+        if((dup_chunk_num = dedup(new_cdc_chunk))){
 
             dedup_time.stop();
             uint32_t header = 0;
@@ -135,61 +71,25 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk,
         }else{
 
             dedup_time.stop();
-            //uint32_t header = 0;
+
             LOG(LOG_INFO_2,"NEW CHUNK : %p chunk no = %d\n",new_cdc_chunk->start, new_cdc_chunk->number);
            
             LZW_in_bytes += new_cdc_chunk->length;
 
             lzw_time.start();
-            //std::vector<int> compressed_data = LZW_encoding(new_cdc_chunk);
-            //uint64_t compressed_length = LZW_encoding(new_cdc_chunk);
 
             unsigned int LZW_HW_output_length = 0;
             size_t in_buf_size = new_cdc_chunk->length*sizeof(unsigned char);
             size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
             size_t out_len_size = sizeof(unsigned int);
 
-            //unsigned char* to_fpga = (unsigned char*)calloc(new_cdc_chunk->length,sizeof(unsigned char));
-            //unsigned int* from_fpga = (unsigned int*)calloc(KERNEL_OUT_SIZE,sizeof(unsigned int));
-            unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));//&LZW_HW_output_length;
+            unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
             unsigned int HW_LZW_IN_LEN = new_cdc_chunk->length;
-
-            //memcpy(to_fpga,new_cdc_chunk->start,new_cdc_chunk->length);
 
             lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_cdc_chunk->start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
 
-            // int header = 0;
-            // uint64_t compressed_size = ceil(13*(*LZW_HW_output_length_ptr) / 8.0);
-            // header |= ( compressed_size <<1); /* size of the new chunk */
-            // header &= ~(0x1); /* lsb equals 0 signifies new chunk */
-            // LOG(LOG_DEBUG,"Header written %x\n",header);
-            // memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
-            // offset += sizeof(header);   
-
-            // uint64_t compressed_length = compress(from_fpga,*LZW_HW_output_length_ptr);
-
             lzw_time.stop();
 
-            //compress_time.start();
-            
-            // uint64_t compressed_size = ceil(13*compressed_data.size() / 8.0);
-            // header |= ( compressed_size <<1); /* size of the new chunk */
-            // header &= ~(0x1); /* lsb equals 0 signifies new chunk */
-            // LOG(LOG_DEBUG,"Header written %x\n",header);
-            // memcpy(&file[offset], &header, sizeof(header)); /* write header to the output file */
-            // offset += sizeof(header);
-
-            // // compress the lzw encoded data
-            // uint64_t compressed_length = compress(compressed_data);
-
-            //compress_time.stop();
-            
-
-            // if(compressed_length != compressed_size){
-            //     //std::cout << "Error: lengths not matching, calculated = " << compressed_size << ", return_val = " << compressed_length<< std::endl;
-            //     LOG(LOG_ERR,"Error on line %d: lengths not matching, calculated = %d, return_val = %d\n",__LINE__,compressed_size, compressed_length);
-            //     exit(1);
-            // }
             offset += *LZW_HW_output_length_ptr;
         }
     }   
@@ -279,13 +179,10 @@ int main(int argc, char* argv[]) {
 
     LZW_kernel_call LZW_kernel_call(context, program, q);
 
-    //unsigned int* from_fpga = (unsigned int*)calloc(KERNEL_OUT_SIZE,sizeof(unsigned int));
-
     total_time.start();
 
     compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call);
 
-    //offset += length;
     writer++;
 
     //last message
@@ -310,7 +207,6 @@ int main(int argc, char* argv[]) {
         length &= ~DONE_BIT_H;
         data_received_bytes += length; // add the length of data received to the byte counter
 
-        //printf("Start of Loop, packet size = %d\r\n",length);
         LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
 
         compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call);
@@ -320,7 +216,6 @@ int main(int argc, char* argv[]) {
 
     total_time.stop();
     
-    //printf("Number of bytes going into LZW - %d \n",LZW_in_bytes);
     LOG(LOG_INFO_1,"Number of bytes going into LZW - %d \n",LZW_in_bytes);
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
@@ -329,7 +224,6 @@ int main(int argc, char* argv[]) {
     std::cout << "Average time for SHA = " << sha_time.avg_latency() << "ms" << " Total time = " << sha_time.latency() << "ms" << std::endl;
     std::cout << "Average time for Dedup = " << dedup_time.avg_latency() << "ms" << " Total time = " << dedup_time.latency() << "ms" << std::endl;
     std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << " Total time = " << lzw_time.latency() << "ms" << std::endl;
-    //std::cout << "Average time for Compress = " << compress_time.avg_latency() << "ns" << std::endl;
 
     std::cout << "Total runtime = " << total_time.latency() << "ms" << std::endl;
     

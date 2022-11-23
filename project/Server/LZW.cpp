@@ -11,6 +11,56 @@ extern unsigned char* file;
 #define KERNEL_IN_SIZE 8*1024
 #define KERNEL_OUT_SIZE 8*1024
 
+LZW_kernel_call::LZW_kernel_call(cl::Context &context_1, 
+                cl::Program &program, 
+                cl::CommandQueue &queue)
+{
+    cl_int err;
+
+    q = queue;
+    context = context_1;
+    OCL_CHECK(err, kernel = cl::Kernel(program, "LZW_encoding_HW", &err));
+
+};
+
+void LZW_kernel_call::LZW_kernel_run(unsigned int HW_LZW_IN_LEN,
+                    size_t in_buf_size,
+                    unsigned char* to_fpga,
+                    size_t out_buf_size,
+                    unsigned char* from_fpga,
+                    size_t out_len_size,
+                    unsigned int* LZW_HW_output_length_ptr){
+    cl_int err;
+    OCL_CHECK(err, in_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, in_buf_size, to_fpga, &err ));
+    OCL_CHECK(err, out_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_buf_size, from_fpga, &err ));
+    OCL_CHECK(err, out_len = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_len_size, LZW_HW_output_length_ptr, &err ));
+    
+    std::vector<cl::Event> write_events_vec;
+    std::vector<cl::Event> execute_events_vec, read_events_vec;
+    cl::Event write_event, execute_event, read_event;
+
+    OCL_CHECK(err, err = kernel.setArg(0, in_buf));
+    OCL_CHECK(err, err = kernel.setArg(1, HW_LZW_IN_LEN));
+    OCL_CHECK(err, err = kernel.setArg(2, out_buf));
+    OCL_CHECK(err, err = kernel.setArg(3, out_len));
+
+
+    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({in_buf}, 0 /* 0 means from host*/, &read_events_vec, &write_event));
+    
+    write_events_vec.push_back(write_event);
+
+    OCL_CHECK(err, err = q.enqueueTask(kernel, &write_events_vec, &execute_event));
+    
+    execute_events_vec.push_back(execute_event);
+
+    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({out_buf, out_len}, CL_MIGRATE_MEM_OBJECT_HOST /* 0 means from host*/, &execute_events_vec, &read_event));
+
+    read_event.wait();
+    read_events_vec.push_back(read_event);
+
+    q.finish();
+
+}
 
 
 
