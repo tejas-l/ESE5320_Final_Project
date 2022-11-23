@@ -1,8 +1,6 @@
 #include "encoder.h"
 
 
-
-
 void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel);
 
 int offset = 0;

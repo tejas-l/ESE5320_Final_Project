@@ -47,4 +47,11 @@ typedef struct chunk{
     uint32_t chunk_num_total;
 } chunk_t;
 
+
+/* data type for passing packet with chunk list */
+typedef struct packet{
+    std::vector<chunk_t> chunk_list;
+    int num_chunks
+} packet_t;
+
 #endif
