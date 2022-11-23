@@ -55,3 +55,49 @@ void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
     return;
 
 }
+
+//For rolling hash 
+void CDC_packet_level(packet_t *new_packet)
+{
+    static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
+
+    unsigned char *buff = new_packet->buffer;
+    chunk_t *chunklist_ptr = new_packet->chunk_list;
+    uint32_t list_index = 0;
+    uint32_t packet_length = new_packet->length;
+    uint32_t prev_index = 0;
+
+
+    uint64_t hash = hash_func(buff,WIN_SIZE);
+    chunklist_ptr[list_index].start = buff;
+    int i ;
+
+    for(i = WIN_SIZE+1; i < packet_length;){
+
+
+        if((i + WIN_SIZE -1) > packet_length){ // Try moving this outside the for loop
+            chunklist_ptr[list_index].length = packet_length - i + 1;
+            list_index++;
+            new_packet->num_chunks = list_index;
+            return;
+        }
+
+        if((hash % MODULUS) == TARGET)
+        {
+
+            chunklist_ptr[list_index].length = i + 1 - prev_index; //Enter the length for nth element in the list //running length
+            prev_index = i;
+            list_index++;
+            chunklist_ptr[list_index].start = &buff[i+1]; // Enter the chunk start for n+1 th element
+            i += MIN_CHUNK_SIZE;
+            hash = hash_func(buff,i);
+            continue;            
+        }
+        hash = (hash * PRIME - (buff[i-1])*cdc_pow + (buff[i-1+WIN_SIZE]*PRIME));
+        i++;
+        
+    }
+
+    return;
+
+}

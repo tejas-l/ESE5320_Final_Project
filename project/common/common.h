@@ -30,6 +30,8 @@
 #define WIN_SIZE 16
 #define MAX_CHUNK_SIZE 8*1024 // 8KB max chunk size
 #define MIN_CHUNK_SIZE 16 // 16 bytes min chunk size
+#define MAX_PACKET_SIZE 8*1024
+
 
 //#define TARGET 0x10
 #define TARGET 0
@@ -50,8 +52,10 @@ typedef struct chunk{
 
 /* data type for passing packet with chunk list */
 typedef struct packet{
-    std::vector<chunk_t> chunk_list;
-    int num_chunks;
+    chunk_t chunk_list[MAX_PACKET_SIZE / MIN_CHUNK_SIZE];
+    unsigned char *buffer;
+    int length;
+    uint64_t num_chunks;
 } packet_t;
 
 #endif

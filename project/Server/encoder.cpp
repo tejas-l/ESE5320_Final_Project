@@ -1,7 +1,7 @@
 #include "encoder.h"
 
 
-void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel);
+void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call &lzw_kernel);
 
 int offset = 0;
 unsigned char* file;
@@ -29,38 +29,41 @@ stopwatch cdc_time;
 stopwatch sha_time;
 stopwatch dedup_time;
 stopwatch lzw_time;
-//stopwatch compress_time;
 
-void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk, LZW_kernel_call &lzw_kernel)
+void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call &lzw_kernel)
 {
+    cdc_time.start();
+    CDC_packet_level(new_packet);
+    cdc_time.stop();
+    // Input_bytes += new_chunk->length;
 
-    for(int i=0; i<length; i += new_cdc_chunk->length){
+    chunk_t *chunklist_ptr = new_packet->chunk_list;
 
-        cdc_time.start();
-        CDC(&buffer[i],new_cdc_chunk,length,i);
-        cdc_time.stop();
-        Input_bytes += new_cdc_chunk->length;
+    //for(int i=0; i<length; i += new_chunk->length){
+    for(int i=0; i<new_packet->num_chunks; i++){
 
-        //printf("Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
-        LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_cdc_chunk->start, new_cdc_chunk->length);
+        new_chunk = &chunklist_ptr[i];
+
+        //printf("Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
+        LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
 
         sha_time.start();
-        SHA256_NEON(new_cdc_chunk);//SHA_384(new_cdc_chunk);
+        SHA256_NEON(new_chunk);//SHA_384(new_chunk);
         sha_time.stop();
 
-        std::string SHA_result(new_cdc_chunk->SHA_signature);
+        std::string SHA_result(new_chunk->SHA_signature);
 
         uint32_t dup_chunk_num;
         dedup_time.start();
 
-        if((dup_chunk_num = dedup(new_cdc_chunk))){
+        if((dup_chunk_num = dedup(new_chunk))){
 
             dedup_time.stop();
             uint32_t header = 0;
             header |= (dup_chunk_num<<1); // 31 bits specify the number of the chunk to be duplicated
             header |= (0x1); // LSB 1 indicates this is a duplicate chunk
 
-            LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_cdc_chunk->start, dup_chunk_num);
+            LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_chunk->start, dup_chunk_num);
             LOG(LOG_INFO_2,"Header written %d\n",header);
 
             memcpy(&file[offset], &header, sizeof(header)); // write header to the file
@@ -70,21 +73,21 @@ void compression_flow(unsigned char *buffer, int length, chunk_t *new_cdc_chunk,
 
             dedup_time.stop();
 
-            LOG(LOG_INFO_2,"NEW CHUNK : %p chunk no = %d\n",new_cdc_chunk->start, new_cdc_chunk->number);
+            LOG(LOG_INFO_2,"NEW CHUNK : %p chunk no = %d\n",new_chunk->start, new_chunk->number);
            
-            LZW_in_bytes += new_cdc_chunk->length;
+            LZW_in_bytes += new_chunk->length;
 
             lzw_time.start();
 
             unsigned int LZW_HW_output_length = 0;
-            size_t in_buf_size = new_cdc_chunk->length*sizeof(unsigned char);
+            size_t in_buf_size = new_chunk->length*sizeof(unsigned char);
             size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
             size_t out_len_size = sizeof(unsigned int);
 
             unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
-            unsigned int HW_LZW_IN_LEN = new_cdc_chunk->length;
+            unsigned int HW_LZW_IN_LEN = new_chunk->length;
 
-            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_cdc_chunk->start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
+            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_chunk->start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
 
             lzw_time.stop();
 
@@ -101,8 +104,9 @@ int main(int argc, char* argv[]) {
     int length = 0;
     int count = 0;
     ESE532_Server server;
-    chunk_t new_cdc_chunk;
-    new_cdc_chunk.number = 0;
+    chunk_t new_chunk;
+    packet_t new_packet;
+    new_chunk.number = 0;
 
     int input_bytes=0;
 
@@ -159,8 +163,8 @@ int main(int argc, char* argv[]) {
     data_received_bytes += length; // add the length of data received to the byte counter
     std::cout << " packet length " << length << std::endl;
 
-    // printing takes time so be weary of transfer rate
-
+    new_packet.buffer = input[writer];
+    new_packet.length = length;
 
     cl_int err;
     //std::string binaryFile = argv[1];
@@ -179,7 +183,7 @@ int main(int argc, char* argv[]) {
 
     total_time.start();
 
-    compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call);
+    compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, LZW_kernel_call);
 
     writer++;
 
@@ -205,9 +209,12 @@ int main(int argc, char* argv[]) {
         length &= ~DONE_BIT_H;
         data_received_bytes += length; // add the length of data received to the byte counter
 
+        new_packet.buffer = input[writer];
+        new_packet.length = length;
+
         LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
 
-        compression_flow(&buffer[HEADER], length, &new_cdc_chunk, LZW_kernel_call);
+        compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, LZW_kernel_call);
 
         writer++;
     }
