@@ -51,7 +51,7 @@ typedef struct chunk{
 /* data type for passing packet with chunk list */
 typedef struct packet{
     std::vector<chunk_t> chunk_list;
-    int num_chunks
+    int num_chunks;
 } packet_t;
 
 #endif
