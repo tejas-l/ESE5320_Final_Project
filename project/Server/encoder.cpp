@@ -32,46 +32,62 @@ stopwatch lzw_time;
 
 void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call &lzw_kernel)
 {
+    static int num_packet = 0;
+    printf("packet number = %d\n",num_packet);
+    num_packet++;
+    
     cdc_time.start();
     CDC_packet_level(new_packet);
     cdc_time.stop();
     // Input_bytes += new_chunk->length;
-    
-    LOG(LOG_CRIT,"NUM CHUNKS = %d \n",new_packet->num_chunks);
 
-    // sha_time.start();
-    // SHA256_NEON_packet_level(new_packet);
-    // sha_time.stop();
+    // // LOG(LOG_CRIT, "SHA FOR CHUNK NUM: %d, chunk length = %d\n",i, new_chunk->length);
+    // for(int k=0; k< new_packet->num_chunks; k++){
+    //     printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
+    // }
+    sha_time.start();
+    SHA256_NEON_packet_level(new_packet);//SHA_384(new_chunk);
+    sha_time.stop();
 
-    // printf("SHA result - \n");
-    // for(int j = 0; j<32; j++){
-    //     printf("%02x",new_packet->chunk_list[0].SHA_signature[j]);
+    printf("Chunk num %d\n",new_packet->num_chunks);
+    dedup_time.start();
+    dedup_packet_level(new_packet);
+    dedup_time.stop();
+
+    // for(int abc=0; abc<32; abc++){
+    //     printf("%02x",new_chunk->SHA_signature[abc]);
     // }
     // printf("\n");
 
-    // LOG(LOG_CRIT,"NUM CHUNKS = %d \n",new_packet->num_chunks);
-
     chunk_t *chunklist_ptr = new_packet->chunk_list;
+
+    printf("Number of chunks = %d\n",new_packet->num_chunks);
 
     //for(int i=0; i<length; i += new_chunk->length){
     for(int i=0; i<new_packet->num_chunks; i++){
 
         new_chunk = &chunklist_ptr[i];
 
-        sha_time.start();
-        SHA256_NEON(new_chunk);
-        sha_time.stop();
-
         //printf("Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
-        // LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
+        //LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
 
+        // LOG(LOG_CRIT, "SHA FOR CHUNK NUM: %d, chunk length = %d\n",i, new_chunk->length);
+        // sha_time.start();
+        // SHA256_NEON(new_chunk);//SHA_384(new_chunk);
+        // sha_time.stop();
 
-        //std::string SHA_result(new_chunk->SHA_signature);
+        // for(int abc=0; abc<32; abc++){
+        //     printf("%02x",new_chunk->SHA_signature[abc]);
+        // }
+        // printf("\n");
 
-        uint32_t dup_chunk_num;
+        // std::string SHA_result(new_chunk->SHA_signature);
+
+        uint32_t dup_chunk_num = new_chunk->number;
         dedup_time.start();
 
-        if((dup_chunk_num = dedup(new_chunk))){
+        if(new_chunk->is_duplicate){
+            printf("dup chunk no: %d\n",dup_chunk_num);
 
             dedup_time.stop();
             uint32_t header = 0;
@@ -81,10 +97,22 @@ void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, c
             LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_chunk->start, dup_chunk_num);
             LOG(LOG_INFO_2,"Header written %d\n",header);
 
+
+
+
             memcpy(&file[offset], &header, sizeof(header)); // write header to the file
+
+            printf("Header written to file - \n");
+
+            for(int z = 0; z<sizeof(header); z++){
+                printf("%02x",file[offset+z]);
+            }
+            printf("\n");
+
             offset += sizeof(header);
 
         }else{
+            printf("dup chunk no: %d\n",dup_chunk_num);
 
             dedup_time.stop();
 
@@ -105,8 +133,16 @@ void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, c
             lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_chunk->start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
 
             lzw_time.stop();
+            printf("Content written to file - \n");
+
+            printf("Length returned by kernel = %d \n",*LZW_HW_output_length_ptr);
+            for(int z = 0; z<*LZW_HW_output_length_ptr; z++){
+                printf("%02x",file[offset+z]);
+            }
+            printf("\n");
 
             offset += *LZW_HW_output_length_ptr;
+            free(LZW_HW_output_length_ptr);
         }
     }   
 }
@@ -178,7 +214,7 @@ int main(int argc, char* argv[]) {
     data_received_bytes += length; // add the length of data received to the byte counter
     std::cout << " packet length " << length << std::endl;
 
-    new_packet.buffer = input[writer];
+    new_packet.buffer = &buffer[HEADER];//input[writer];
     new_packet.length = length;
 
     cl_int err;
@@ -224,8 +260,9 @@ int main(int argc, char* argv[]) {
         length &= ~DONE_BIT_H;
         data_received_bytes += length; // add the length of data received to the byte counter
 
-        new_packet.buffer = input[writer];
+        new_packet.buffer = &buffer[HEADER];//input[writer];
         new_packet.length = length;
+        Input_bytes = length;
 
         LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
 
@@ -266,11 +303,12 @@ int main(int argc, char* argv[]) {
     std::cout << "--------------- Key Throughputs ---------------" << std::endl;
     float ethernet_latency = ethernet_timer.latency() / 1000.0;
     float input_throughput = (Input_bytes * 8 / 1000000.0) / ethernet_latency; // Mb/s
+
+    std::cout<< "Input bytes" << Input_bytes << std::endl;
     std::cout << "Input Throughput to Encoder: " << input_throughput << " Mb/s."
             << " (Latency: " << ethernet_latency << "s)." << std::endl;
 
 
     return 0;
 }
-
 

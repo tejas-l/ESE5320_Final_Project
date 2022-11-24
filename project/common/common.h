@@ -53,7 +53,7 @@ typedef struct chunk{
 
 /* data type for passing packet with chunk list */
 typedef struct packet{
-    chunk_t chunk_list[MAX_PACKET_SIZE / MIN_CHUNK_SIZE];
+    chunk_t chunk_list[(MAX_PACKET_SIZE / MIN_CHUNK_SIZE) + 5];
     unsigned char *buffer;
     int length;
     uint64_t num_chunks;

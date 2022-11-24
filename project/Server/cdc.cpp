@@ -67,16 +67,15 @@ void CDC_packet_level(packet_t *new_packet)
     uint32_t packet_length = new_packet->length;
     uint32_t prev_index = 0;
 
-
-    uint64_t hash = hash_func(buff,WIN_SIZE);
+    uint64_t hash = hash_func(buff,MIN_CHUNK_SIZE);
     chunklist_ptr[list_index].start = buff;
-    int i ;
-
-    for(i = WIN_SIZE+1; i < packet_length;){
 
 
-        if((i + WIN_SIZE -1) > packet_length){ // Try moving this outside the for loop
-            chunklist_ptr[list_index].length = packet_length - i + 1;
+    for(uint32_t i = MIN_CHUNK_SIZE; i < packet_length;){
+
+        if((i + MIN_CHUNK_SIZE -1) > packet_length){ // Try moving this outside the for loop
+            chunklist_ptr[list_index].length = packet_length - prev_index;//i + 1 - prev_index;
+            printf("i1: %d, chunk number: %d, chunk length: %d\n",i,list_index,chunklist_ptr[list_index].length);
             list_index++;
             new_packet->num_chunks = list_index;
             return;
@@ -86,17 +85,20 @@ void CDC_packet_level(packet_t *new_packet)
         {
 
             chunklist_ptr[list_index].length = i + 1 - prev_index; //Enter the length for nth element in the list //running length
-            prev_index = i;
+            prev_index = i + 1;
+            printf("i2: %d, chunk number: %d, chunk length: %d\n",i,list_index,chunklist_ptr[list_index].length);
             list_index++;
             chunklist_ptr[list_index].start = &buff[i+1]; // Enter the chunk start for n+1 th element
             i += MIN_CHUNK_SIZE;
             hash = hash_func(buff,i);
             continue;            
         }
-        hash = (hash * PRIME - (buff[i-1])*cdc_pow + (buff[i-1+WIN_SIZE]*PRIME));
         i++;
+        hash = (hash * PRIME - (buff[i-1])*cdc_pow + (buff[i-1+WIN_SIZE]*PRIME));
         
     }
+    list_index++;
+    new_packet->num_chunks = list_index;
 
     return;
 

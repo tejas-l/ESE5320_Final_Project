@@ -6,5 +6,6 @@
 
 
 uint32_t dedup(chunk_t *chunk);
+void dedup_packet_level(packet_t *new_packet);
 
 #endif
