@@ -160,11 +160,6 @@ void SHA256_comp(uint32x4_t MSG0, uint32x4_t MSG1, uint32x4_t MSG2, uint32x4_t M
 /*  state, and the caller is responsible for padding the final block.        */
 void sha256_process_arm(uint32_t state[8], const uint8_t data[], uint32_t length)
 {
-    printf("data ptr = %p, length = %d\n",data,length);
-    for(int b=0; b<4;b++){
-        printf("%c",data[b]);
-    }
-    printf("\n");
 
     uint64_t in_bits = length*8;
     int64_t num_bits_padding = 448 - ((in_bits + 1) % 512);
@@ -275,9 +270,9 @@ void SHA256_NEON_packet_level(packet_t *new_packet)
     uint32_t num_chunks = new_packet->num_chunks;
     // chunk_t *chunk_list_ptr = new_packet->chunk_list;
 
-    for(int k=0; k< 4; k++){
-        printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
-    }
+    // for(int k=0; k< 4; k++){
+    //     printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
+    // }
 
     for(int c=0; c<num_chunks; c++){
 
@@ -287,7 +282,7 @@ void SHA256_NEON_packet_level(packet_t *new_packet)
             0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
         };
 
-        printf("neon c=%d, start=%p, length=%d\n",c,new_packet->chunk_list[c].start, new_packet->chunk_list[c].length);
+        //printf("neon c=%d, start=%p, length=%d\n",c,new_packet->chunk_list[c].start, new_packet->chunk_list[c].length);
 
         sha256_process_arm(state, &new_packet->chunk_list[c].start[0], new_packet->chunk_list[c].length);
 

@@ -33,118 +33,26 @@ stopwatch lzw_time;
 void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call &lzw_kernel)
 {
     static int num_packet = 0;
-    printf("packet number = %d\n",num_packet);
     num_packet++;
     
     cdc_time.start();
     CDC_packet_level(new_packet);
     cdc_time.stop();
-    // Input_bytes += new_chunk->length;
 
-    // // LOG(LOG_CRIT, "SHA FOR CHUNK NUM: %d, chunk length = %d\n",i, new_chunk->length);
-    // for(int k=0; k< new_packet->num_chunks; k++){
-    //     printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
-    // }
     sha_time.start();
-    SHA256_NEON_packet_level(new_packet);//SHA_384(new_chunk);
+    SHA256_NEON_packet_level(new_packet);
     sha_time.stop();
 
-    printf("Chunk num %d\n",new_packet->num_chunks);
     dedup_time.start();
     dedup_packet_level(new_packet);
     dedup_time.stop();
 
-    // for(int abc=0; abc<32; abc++){
-    //     printf("%02x",new_chunk->SHA_signature[abc]);
-    // }
-    // printf("\n");
+    LOG(LOG_INFO_1,"LZW packet level called\n");
 
-    chunk_t *chunklist_ptr = new_packet->chunk_list;
+    lzw_time.start();
+    LZW_encoding_packet_level(new_packet,lzw_kernel);
+    lzw_time.stop();
 
-    printf("Number of chunks = %d\n",new_packet->num_chunks);
-
-    //for(int i=0; i<length; i += new_chunk->length){
-    for(int i=0; i<new_packet->num_chunks; i++){
-
-        new_chunk = &chunklist_ptr[i];
-
-        //printf("Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
-        //LOG(LOG_INFO_2,"Chunk Start = %p, length = %d\n",new_chunk->start, new_chunk->length);
-
-        // LOG(LOG_CRIT, "SHA FOR CHUNK NUM: %d, chunk length = %d\n",i, new_chunk->length);
-        // sha_time.start();
-        // SHA256_NEON(new_chunk);//SHA_384(new_chunk);
-        // sha_time.stop();
-
-        // for(int abc=0; abc<32; abc++){
-        //     printf("%02x",new_chunk->SHA_signature[abc]);
-        // }
-        // printf("\n");
-
-        // std::string SHA_result(new_chunk->SHA_signature);
-
-        uint32_t dup_chunk_num = new_chunk->number;
-        dedup_time.start();
-
-        if(new_chunk->is_duplicate){
-            printf("dup chunk no: %d\n",dup_chunk_num);
-
-            dedup_time.stop();
-            uint32_t header = 0;
-            header |= (dup_chunk_num<<1); // 31 bits specify the number of the chunk to be duplicated
-            header |= (0x1); // LSB 1 indicates this is a duplicate chunk
-
-            LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_chunk->start, dup_chunk_num);
-            LOG(LOG_INFO_2,"Header written %d\n",header);
-
-
-
-
-            memcpy(&file[offset], &header, sizeof(header)); // write header to the file
-
-            printf("Header written to file - \n");
-
-            for(int z = 0; z<sizeof(header); z++){
-                printf("%02x",file[offset+z]);
-            }
-            printf("\n");
-
-            offset += sizeof(header);
-
-        }else{
-            printf("dup chunk no: %d\n",dup_chunk_num);
-
-            dedup_time.stop();
-
-            LOG(LOG_INFO_2,"NEW CHUNK : %p chunk no = %d\n",new_chunk->start, new_chunk->number);
-           
-            LZW_in_bytes += new_chunk->length;
-
-            lzw_time.start();
-
-            unsigned int LZW_HW_output_length = 0;
-            size_t in_buf_size = new_chunk->length*sizeof(unsigned char);
-            size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
-            size_t out_len_size = sizeof(unsigned int);
-
-            unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
-            unsigned int HW_LZW_IN_LEN = new_chunk->length;
-
-            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, new_chunk->start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
-
-            lzw_time.stop();
-            printf("Content written to file - \n");
-
-            printf("Length returned by kernel = %d \n",*LZW_HW_output_length_ptr);
-            for(int z = 0; z<*LZW_HW_output_length_ptr; z++){
-                printf("%02x",file[offset+z]);
-            }
-            printf("\n");
-
-            offset += *LZW_HW_output_length_ptr;
-            free(LZW_HW_output_length_ptr);
-        }
-    }   
 }
 
 int main(int argc, char* argv[]) {
@@ -290,7 +198,11 @@ int main(int argc, char* argv[]) {
 
     output_time = output_time/1000.0;
 
-    std::cout << "Throughput = " << (data_received_bytes*8/1000000.0)/output_time << " Mb/s" << std::endl;
+    std::cout << "Databytes received = " << data_received_bytes << std::endl;
+
+    std::cout << "Throughput wihout LZW = " << (data_received_bytes*8/1000000.0)/output_time << " Mb/s" << std::endl;
+
+    std::cout << "Throughput = " << (data_received_bytes*8/1000000.0)/(total_time.latency()/1000.0) << " Mb/s" << std::endl;
 
     LOG(LOG_CRIT,"write file with %d\n", bytes_written);
     fclose(outfd);

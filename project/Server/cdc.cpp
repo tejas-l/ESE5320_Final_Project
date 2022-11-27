@@ -10,6 +10,8 @@ extern unsigned char* file;
 static const double pow_table[WIN_SIZE] = {3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0,
                              19683.0, 59049.0, 177147.0, 531441.0, 1594323.0, 4782969.0, 14348907.0, 43046721.0};
 
+
+
 uint64_t hash_func(unsigned char *input, unsigned int pos)
 {
     // put your hash function implementation here
@@ -60,43 +62,37 @@ void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 void CDC_packet_level(packet_t *new_packet)
 {
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
-
-    unsigned char *buff = new_packet->buffer;
-    chunk_t *chunklist_ptr = new_packet->chunk_list;
+    unsigned char * const buff = new_packet->buffer;
+    chunk_t * const chunklist_ptr = new_packet->chunk_list;
     uint32_t list_index = 0;
     uint32_t packet_length = new_packet->length;
     uint32_t prev_index = 0;
+    uint32_t i;
 
     uint64_t hash = hash_func(buff,MIN_CHUNK_SIZE);
     chunklist_ptr[list_index].start = buff;
 
 
-    for(uint32_t i = MIN_CHUNK_SIZE; i < packet_length;){
-
-        if((i + MIN_CHUNK_SIZE -1) > packet_length){ // Try moving this outside the for loop
-            chunklist_ptr[list_index].length = packet_length - prev_index;//i + 1 - prev_index;
-            printf("i1: %d, chunk number: %d, chunk length: %d\n",i,list_index,chunklist_ptr[list_index].length);
-            list_index++;
-            new_packet->num_chunks = list_index;
-            return;
-        }
+    for(i = MIN_CHUNK_SIZE; i < packet_length - MIN_CHUNK_SIZE; i=i){
 
         if((hash % MODULUS) == TARGET)
         {
 
             chunklist_ptr[list_index].length = i + 1 - prev_index; //Enter the length for nth element in the list //running length
             prev_index = i + 1;
-            printf("i2: %d, chunk number: %d, chunk length: %d\n",i,list_index,chunklist_ptr[list_index].length);
             list_index++;
             chunklist_ptr[list_index].start = &buff[i+1]; // Enter the chunk start for n+1 th element
             i += MIN_CHUNK_SIZE;
             hash = hash_func(buff,i);
-            continue;            
+            continue;
         }
+
         i++;
         hash = (hash * PRIME - (buff[i-1])*cdc_pow + (buff[i-1+WIN_SIZE]*PRIME));
         
     }
+
+    chunklist_ptr[list_index].length = packet_length - prev_index;
     list_index++;
     new_packet->num_chunks = list_index;
 
