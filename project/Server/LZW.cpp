@@ -179,6 +179,8 @@ uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_ke
     // wait for semaphore released by dedup
     sem_wait(sem_dedup_lzw);
 
+    LOG(LOG_INFO_1, "semaphore received, starting lzw\n");
+
     chunk_t *chunklist_ptr = new_packet->chunk_list;
     uint64_t num_chunks = new_packet->num_chunks;
 
@@ -217,6 +219,7 @@ uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_ke
 
     // release semaphore for lzw kernel completion
     sem_post(sem_lzw);
+    LOG(LOG_INFO_1, "releasing semaphore for cdc from lzw\n");
 
     return offset;
 

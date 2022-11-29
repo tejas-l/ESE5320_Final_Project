@@ -19,7 +19,7 @@ void pin_thread_to_cpu(std::thread &t, int cpu_num)
 #endif
 }
 
-void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel);
+// void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel);
 
 int offset = 0;
 unsigned char* file;
@@ -48,30 +48,30 @@ stopwatch sha_time;
 stopwatch dedup_time;
 stopwatch lzw_time;
 
-void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel)
-{
-    static int num_packet = 0;
-    num_packet++;
+// void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel)
+// {
+//     static int num_packet = 0;
+//     num_packet++;
     
-    cdc_time.start();
-    CDC_packet_level(new_packet);
-    cdc_time.stop();
+//     cdc_time.start();
+//     CDC_packet_level(new_packet);
+//     cdc_time.stop();
 
-    sha_time.start();
-    SHA256_NEON_packet_level(new_packet);
-    sha_time.stop();
+//     sha_time.start();
+//     SHA256_NEON_packet_level(new_packet);
+//     sha_time.stop();
 
-    dedup_time.start();
-    dedup_packet_level(new_packet);
-    dedup_time.stop();
+//     dedup_time.start();
+//     dedup_packet_level(new_packet);
+//     dedup_time.stop();
 
-    LOG(LOG_INFO_1,"LZW packet level called\n");
+//     LOG(LOG_INFO_1,"LZW packet level called\n");
 
-    lzw_time.start();
-    LZW_encoding_packet_level(new_packet,lzw_kernel);
-    lzw_time.stop();
+//     lzw_time.start();
+//     LZW_encoding_packet_level(new_packet,lzw_kernel);
+//     lzw_time.stop();
 
-}
+// }
 
 int main(int argc, char* argv[]) {
     stopwatch ethernet_timer;
@@ -224,8 +224,8 @@ int main(int argc, char* argv[]) {
         ths.pop_back();
     }
 
-    sem_wait(sem_lzw);
-    sem_post(sem_cdc);
+    sem_wait(&sem_lzw);
+    sem_post(&sem_cdc);
 
     // compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel);
 
@@ -312,8 +312,8 @@ int main(int argc, char* argv[]) {
             ths.pop_back();
         }
 
-        sem_wait(sem_lzw);
-        sem_post(sem_cdc);
+        sem_wait(&sem_lzw);
+        sem_post(&sem_cdc);
 
         writer++;
     }

@@ -63,6 +63,8 @@ void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha)
 {
     // wait for semaphore to be released
     sem_wait(sem_cdc);
+
+    LOG(LOG_INFO_1, "semaphore received, starting cdc\n");
     
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
     unsigned char * const buff = new_packet->buffer;
@@ -99,8 +101,8 @@ void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha)
     list_index++;
     new_packet->num_chunks = list_index;
 
-
     sem_post(sem_cdc_sha);
+    LOG(LOG_INFO_1, "releasing semaphore for sha from cdc\n");
 
     return;
 }

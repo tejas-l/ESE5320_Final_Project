@@ -29,6 +29,8 @@ void dedup_packet_level(packet_t *new_packet, sem_t *sem_sha_dedup, sem_t *sem_d
     // wait fro semaphore
     sem_wait(sem_sha_dedup);
 
+    LOG(LOG_INFO_1, "semaphore received, starting dedup\n");
+
     static std::unordered_map<std::string, uint32_t> SHA_map;
     static uint32_t num_unique_chunk = 0;
 
@@ -55,6 +57,8 @@ void dedup_packet_level(packet_t *new_packet, sem_t *sem_sha_dedup, sem_t *sem_d
 
     // release semaphore
     sem_post(sem_dedup_lzw);
+
+    LOG(LOG_INFO_1, "releasing semaphore for lzw from dedup\n");
 
     return;
 }
