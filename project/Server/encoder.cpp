@@ -220,7 +220,7 @@ int main(int argc, char* argv[]) {
         th.join();
     }
 
-    for(int i=0; i<ths.size(); i++){
+    for(int i=0; i<4; i++){
         ths.pop_back();
     }
 
@@ -257,7 +257,7 @@ int main(int argc, char* argv[]) {
         new_packet.length = length;
         Input_bytes = length;
 
-        LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
+        LOG(LOG_DEBUG,"Start of Loop, packet size = %d\r\n",length);
 
         // compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel);
 
@@ -271,49 +271,66 @@ int main(int argc, char* argv[]) {
 
         // ths.pop_back();
 
+        LOG(LOG_DEBUG, "ths size = %d\n",ths.size());
+
         ths.push_back(std::thread(&CDC_packet_level, &new_packet, &sem_cdc, &sem_cdc_sha));
         pin_thread_to_cpu(ths[0],0);
+
+        LOG(LOG_DEBUG, "CDC thread created\n");
 
         // for(auto &th : ths){
         //     th.join();
         // }
 
-        //ths.pop_back();
+        // ths.pop_back();
 
         // sha neon thread
         ths.push_back(std::thread(&SHA256_NEON_packet_level, &new_packet, &sem_cdc_sha, &sem_sha_dedup));
         pin_thread_to_cpu(ths[1],0);
 
+        LOG(LOG_DEBUG, "SHA thread created\n");
+
         // for(auto &th : ths){
         //     th.join();
         // }
 
-        //ths.pop_back();
+        // ths.pop_back();
 
         // dedup thread
         ths.push_back(std::thread(&dedup_packet_level, &new_packet, &sem_sha_dedup, &sem_dedup_lzw));
         pin_thread_to_cpu(ths[2],0);
 
+        LOG(LOG_DEBUG, "Dedup thread created\n");
+
         // for(auto &th : ths){
         //     th.join();
         // }
 
-        //ths.pop_back();
+        // ths.pop_back();
 
         // lzw thread
         ths.push_back(std::thread(&LZW_encoding_packet_level, &new_packet, &lzw_kernel, &sem_dedup_lzw, &sem_lzw));
         pin_thread_to_cpu(ths[3],0);
 
+        LOG(LOG_DEBUG, "LZW thread created\n");
+
+        LOG(LOG_DEBUG, "Waiting for threads to finish\n");
+
         for(auto &th : ths){
             th.join();
         }
 
-        for(int i=0; i<ths.size(); i++){
+        LOG(LOG_DEBUG, "theads joined\n");
+
+        for(int i=0; i<4; i++){
             ths.pop_back();
         }
 
         sem_wait(&sem_lzw);
+        LOG(LOG_DEBUG, "received lzw semaphore\n");
         sem_post(&sem_cdc);
+
+        LOG(LOG_DEBUG, "posted cdc sem\n");
 
         writer++;
     }

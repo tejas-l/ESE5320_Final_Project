@@ -65,7 +65,10 @@ void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha)
     sem_wait(sem_cdc);
 
     LOG(LOG_INFO_1, "semaphore received, starting cdc\n");
-    
+
+    LOG(LOG_DEBUG, "new_packet_ptr = %p, sem_cdc = %p, sem_sha = %p\n",new_packet,sem_cdc,sem_cdc_sha);
+
+
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
     unsigned char * const buff = new_packet->buffer;
     chunk_t * const chunklist_ptr = new_packet->chunk_list;
@@ -73,6 +76,8 @@ void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha)
     uint32_t packet_length = new_packet->length;
     uint32_t prev_index = 0;
     uint32_t i;
+
+    LOG(LOG_DEBUG, "Calcualting hash\n");
 
     uint64_t hash = hash_func(buff,MIN_CHUNK_SIZE);
     chunklist_ptr[list_index].start = buff;
@@ -101,6 +106,7 @@ void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha)
     list_index++;
     new_packet->num_chunks = list_index;
 
+    LOG(LOG_DEBUG, "Finished CDC, posting sem for sha\n");
     sem_post(sem_cdc_sha);
     LOG(LOG_INFO_1, "releasing semaphore for sha from cdc\n");
 
