@@ -7,6 +7,7 @@
 #include "SHA_block.h"
 #include "SHA256_NEON.h"
 #include "dedup.h"
+#include "threading.h"
 
 #include "../common/common.h"
 #include "Utilities.h"

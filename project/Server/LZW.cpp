@@ -174,7 +174,10 @@ uint64_t LZW_encoding(chunk_t* chunk)
     return compress(from_fpga,*LZW_HW_output_length_ptr);
 }
 
-uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call &lzw_kernel){
+uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw)
+{
+    // wait for semaphore released by dedup
+    sem_wait(sem_dedup_lzw);
 
     chunk_t *chunklist_ptr = new_packet->chunk_list;
     uint64_t num_chunks = new_packet->num_chunks;
@@ -204,13 +207,16 @@ uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call &lzw_ke
             unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
             unsigned int HW_LZW_IN_LEN = chunklist_ptr[i].length;
 
-            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, chunklist_ptr[i].start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
+            lzw_kernel->LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, chunklist_ptr[i].start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
 
             offset += *LZW_HW_output_length_ptr;
             free(LZW_HW_output_length_ptr);
 
         }
     }
+
+    // release semaphore for lzw kernel completion
+    sem_post(sem_lzw);
 
     return offset;
 

@@ -59,8 +59,11 @@ void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 }
 
 //For rolling hash 
-void CDC_packet_level(packet_t *new_packet)
+void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha)
 {
+    // wait for semaphore to be released
+    sem_wait(sem_cdc);
+    
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
     unsigned char * const buff = new_packet->buffer;
     chunk_t * const chunklist_ptr = new_packet->chunk_list;
@@ -96,6 +99,8 @@ void CDC_packet_level(packet_t *new_packet)
     list_index++;
     new_packet->num_chunks = list_index;
 
-    return;
 
+    sem_post(sem_cdc_sha);
+
+    return;
 }

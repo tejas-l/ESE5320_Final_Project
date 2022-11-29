@@ -1,4 +1,5 @@
 #include "SHA256_NEON.h"
+#include <semaphore.h>
 
 static const uint32_t K[] =
 {
@@ -264,8 +265,11 @@ void SHA256_NEON(chunk_t *chunk)//, wc_Sha3* sha3_384)
 
 }
 
-void SHA256_NEON_packet_level(packet_t *new_packet)
+void SHA256_NEON_packet_level(packet_t *new_packet, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup)
 {
+    // wait for semaphore
+    sem_wait(sem_cdc_sha);
+
 	uint8_t shaChar[32]={0};
     uint32_t num_chunks = new_packet->num_chunks;
     // chunk_t *chunk_list_ptr = new_packet->chunk_list;
@@ -297,6 +301,9 @@ void SHA256_NEON_packet_level(packet_t *new_packet)
         std::string shaString(reinterpret_cast<char*>(shaChar), 32);
         new_packet->chunk_list[c].SHA_signature = shaString;
     }
+
+    // release semaphore for dedup
+    sem_post(sem_sha_dedup);
 
     return;
 }

@@ -9,7 +9,9 @@
 #include "../Server/server.h"
 #include <unistd.h>
 #include <fcntl.h>
-#include <pthread.h>
+#include <thread>
+#include <semaphore.h>
+//#include <pthread.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/mman.h>

@@ -34,5 +34,5 @@ class LZW_kernel_call
 
 uint64_t compress(unsigned int *compressed_data, unsigned int compressed_data_len);
 uint64_t LZW_encoding(chunk_t* chunk);
-uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call &lzw_kernel);
+uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw);
 #endif
