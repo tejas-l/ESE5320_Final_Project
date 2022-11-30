@@ -1,7 +1,25 @@
 #include "encoder.h"
 
 
-void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call &lzw_kernel);
+// from https://eli.thegreenplace.net/2016/c11-threads-affinity-and-hyperthreading/
+void pin_thread_to_cpu(std::thread &t, int cpu_num)
+{
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__) || defined(__APPLE__)
+    return;
+#else
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu_num, &cpuset);
+    int rc =
+        pthread_setaffinity_np(t.native_handle(), sizeof(cpu_set_t), &cpuset);
+    if (rc != 0)
+    {
+        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    }
+#endif
+}
+
+// void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel);
 
 int offset = 0;
 unsigned char* file;
@@ -30,30 +48,30 @@ stopwatch sha_time;
 stopwatch dedup_time;
 stopwatch lzw_time;
 
-void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call &lzw_kernel)
-{
-    static int num_packet = 0;
-    num_packet++;
+// void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel)
+// {
+//     static int num_packet = 0;
+//     num_packet++;
     
-    cdc_time.start();
-    CDC_packet_level(new_packet);
-    cdc_time.stop();
+//     cdc_time.start();
+//     CDC_packet_level(new_packet);
+//     cdc_time.stop();
 
-    sha_time.start();
-    SHA256_NEON_packet_level(new_packet);
-    sha_time.stop();
+//     sha_time.start();
+//     SHA256_NEON_packet_level(new_packet);
+//     sha_time.stop();
 
-    dedup_time.start();
-    dedup_packet_level(new_packet);
-    dedup_time.stop();
+//     dedup_time.start();
+//     dedup_packet_level(new_packet);
+//     dedup_time.stop();
 
-    LOG(LOG_INFO_1,"LZW packet level called\n");
+//     LOG(LOG_INFO_1,"LZW packet level called\n");
 
-    lzw_time.start();
-    LZW_encoding_packet_level(new_packet,lzw_kernel);
-    lzw_time.stop();
+//     lzw_time.start();
+//     LZW_encoding_packet_level(new_packet,lzw_kernel);
+//     lzw_time.stop();
 
-}
+// }
 
 int main(int argc, char* argv[]) {
     stopwatch ethernet_timer;
@@ -138,11 +156,55 @@ int main(int argc, char* argv[]) {
     cl::Program program(context, devices, bins, NULL, &err);
     cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
 
-    LZW_kernel_call LZW_kernel_call(context, program, q);
+    LZW_kernel_call lzw_kernel(context, program, q);
+
 
     total_time.start();
 
-    compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, LZW_kernel_call);
+    /*
+     * Create threads for the pipelined implementation 
+     * of compression flow.
+     */
+    std::vector<std::thread> ths;
+
+
+    sem_t sem_cdc;
+    sem_t sem_cdc_sha;
+    sem_t sem_sha_dedup;
+    sem_t sem_dedup_lzw;
+    sem_t sem_lzw;
+
+    int sem_done;
+
+
+    sem_init(&sem_cdc,0,1); // initialize with sem value 1 meaning ready
+    sem_init(&sem_cdc_sha,0,0); // initialize with sem value 0 meaning not ready
+    sem_init(&sem_sha_dedup,0,0); // initialize with sem value 0 meaning not ready
+    sem_init(&sem_dedup_lzw,0,0); // initialize with sem value 0 meaning not ready
+    sem_init(&sem_lzw,0,0); // initialize with sem value 0 meaning not ready
+
+    // create threads for functions in the pipeline
+    // cdc thread
+    ths.push_back(std::thread(&CDC_packet_level, &new_packet, &sem_cdc, &sem_cdc_sha, &sem_done));
+    pin_thread_to_cpu(ths[0],0);
+
+    // sha neon thread
+    ths.push_back(std::thread(&SHA256_NEON_packet_level, &new_packet, &sem_cdc_sha, &sem_sha_dedup, &sem_done));
+    pin_thread_to_cpu(ths[1],0);
+
+    // dedup thread
+    ths.push_back(std::thread(&dedup_packet_level, &new_packet, &sem_sha_dedup, &sem_dedup_lzw, &sem_done));
+    pin_thread_to_cpu(ths[2],0);
+
+    // lzw thread
+    ths.push_back(std::thread(&LZW_encoding_packet_level, &new_packet, &lzw_kernel, &sem_dedup_lzw, &sem_lzw, &sem_done));
+    pin_thread_to_cpu(ths[3],0);
+
+
+    // wait until the packet is fully processed.
+    sem_wait(&sem_lzw);
+
+    // compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel);
 
     writer++;
 
@@ -172,16 +234,33 @@ int main(int argc, char* argv[]) {
         new_packet.length = length;
         Input_bytes = length;
 
-        LOG(LOG_INFO_2,"Start of Loop, packet size = %d\r\n",length);
+        LOG(LOG_DEBUG, "posted cdc sem\n");
+        sem_post(&sem_cdc);
 
-        compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, LZW_kernel_call);
+        LOG(LOG_DEBUG,"Start of Loop, packet size = %d\r\n",length);
+
+        sem_wait(&sem_lzw);
+        LOG(LOG_DEBUG, "received lzw semaphore\n");
 
         writer++;
+    }
+
+    sem_done = 1;
+    sem_post(&sem_cdc);
+    sem_wait(&sem_lzw);
+
+    for(auto &th : ths){
+        th.join();
+    }
+
+    for(int i=0; i<4; i++){
+        ths.pop_back();
     }
 
     total_time.stop();
     
     LOG(LOG_INFO_1,"Number of bytes going into LZW - %d \n",LZW_in_bytes);
+
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
     int bytes_written = fwrite(&file[0], 1, offset, outfd);

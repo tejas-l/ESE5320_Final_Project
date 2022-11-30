@@ -16,7 +16,7 @@
 
 #define LOG_NO_PRINT -1 // never useee!!!
 
-#define LOG_LEVEL LOG_NO_PRINT
+#define LOG_LEVEL LOG_DEBUG
 
 
 /* logger function */

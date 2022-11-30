@@ -174,42 +174,59 @@ uint64_t LZW_encoding(chunk_t* chunk)
     return compress(from_fpga,*LZW_HW_output_length_ptr);
 }
 
-uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call &lzw_kernel){
+uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw, int *sem_done)
+{
 
-    chunk_t *chunklist_ptr = new_packet->chunk_list;
-    uint64_t num_chunks = new_packet->num_chunks;
+    while(1){
+        // wait for semaphore released by dedup
+        sem_wait(sem_dedup_lzw);
 
-    for(uint64_t i = 0; i < num_chunks; i++){
-        if(chunklist_ptr[i].is_duplicate){
-            uint32_t header = 0;
-            header |= (chunklist_ptr[i].number<<1); // 31 bits specify the number of the chunk to be duplicated
-            header |= (0x1); // LSB 1 indicates this is a duplicate chunk
-
-            //LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_chunk->start, dup_chunk_num);
-            //LOG(LOG_INFO_2,"Header written %d\n",header);
-
-            memcpy(&file[offset], &header, sizeof(header)); // write header to the file
-
-            // printf("Header written to file - \n");
-            LOG(LOG_INFO_1,"Header written %d\n",header);
-
-            offset += sizeof(header);
-
-        }else{
-            unsigned int LZW_HW_output_length = 0;
-            size_t in_buf_size = chunklist_ptr[i].length*sizeof(unsigned char);
-            size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
-            size_t out_len_size = sizeof(unsigned int);
-
-            unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
-            unsigned int HW_LZW_IN_LEN = chunklist_ptr[i].length;
-
-            lzw_kernel.LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, chunklist_ptr[i].start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
-
-            offset += *LZW_HW_output_length_ptr;
-            free(LZW_HW_output_length_ptr);
-
+        if(*sem_done == 1){
+            sem_post(sem_lzw);
+            return offset;
         }
+
+        LOG(LOG_INFO_1, "semaphore received, starting lzw\n");
+
+        chunk_t *chunklist_ptr = new_packet->chunk_list;
+        uint64_t num_chunks = new_packet->num_chunks;
+
+        for(uint64_t i = 0; i < num_chunks; i++){
+            if(chunklist_ptr[i].is_duplicate){
+                uint32_t header = 0;
+                header |= (chunklist_ptr[i].number<<1); // 31 bits specify the number of the chunk to be duplicated
+                header |= (0x1); // LSB 1 indicates this is a duplicate chunk
+
+                //LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_chunk->start, dup_chunk_num);
+                //LOG(LOG_INFO_2,"Header written %d\n",header);
+
+                memcpy(&file[offset], &header, sizeof(header)); // write header to the file
+
+                // printf("Header written to file - \n");
+                LOG(LOG_INFO_1,"Header written %d\n",header);
+
+                offset += sizeof(header);
+
+            }else{
+                unsigned int LZW_HW_output_length = 0;
+                size_t in_buf_size = chunklist_ptr[i].length*sizeof(unsigned char);
+                size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
+                size_t out_len_size = sizeof(unsigned int);
+
+                unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
+                unsigned int HW_LZW_IN_LEN = chunklist_ptr[i].length;
+
+                lzw_kernel->LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, chunklist_ptr[i].start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
+
+                offset += *LZW_HW_output_length_ptr;
+                free(LZW_HW_output_length_ptr);
+
+            }
+        }
+
+        // release semaphore for lzw kernel completion
+        sem_post(sem_lzw);
+        LOG(LOG_INFO_1, "releasing semaphore for cdc from lzw\n");
     }
 
     return offset;

@@ -59,43 +59,63 @@ void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 }
 
 //For rolling hash 
-void CDC_packet_level(packet_t *new_packet)
+void CDC_packet_level(packet_t * const new_packet, sem_t * const sem_cdc, sem_t * const sem_cdc_sha, int *sem_done)
 {
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
-    unsigned char * const buff = new_packet->buffer;
-    chunk_t * const chunklist_ptr = new_packet->chunk_list;
-    uint32_t list_index = 0;
-    uint32_t packet_length = new_packet->length;
-    uint32_t prev_index = 0;
-    uint32_t i;
 
-    uint64_t hash = hash_func(buff,MIN_CHUNK_SIZE);
-    chunklist_ptr[list_index].start = buff;
+    while (1){
+        // wait for semaphore to be released
+        sem_wait(sem_cdc);
+
+        if(*sem_done == 1){
+            sem_post(sem_cdc_sha);
+            return;
+        }
+        
+        LOG(LOG_INFO_1, "semaphore received, starting cdc\n");
+
+        LOG(LOG_DEBUG, "new_packet_ptr = %p, sem_cdc = %p, sem_sha = %p\n",new_packet,sem_cdc,sem_cdc_sha);
 
 
-    for(i = MIN_CHUNK_SIZE; i < packet_length - MIN_CHUNK_SIZE; i=i){
+        unsigned char * const buff = new_packet->buffer;
+        chunk_t * const chunklist_ptr = new_packet->chunk_list;
+        uint32_t list_index = 0;
+        uint32_t packet_length = new_packet->length;
+        uint32_t prev_index = 0;
+        uint32_t i;
 
-        if((hash % MODULUS) == TARGET)
-        {
+        LOG(LOG_DEBUG, "Calcualting hash\n");
 
-            chunklist_ptr[list_index].length = i + 1 - prev_index; //Enter the length for nth element in the list //running length
-            prev_index = i + 1;
-            list_index++;
-            chunklist_ptr[list_index].start = &buff[i+1]; // Enter the chunk start for n+1 th element
-            i += MIN_CHUNK_SIZE;
-            hash = hash_func(buff,i);
-            continue;
+        uint64_t hash = hash_func(buff,MIN_CHUNK_SIZE);
+        chunklist_ptr[list_index].start = buff;
+
+
+        for(i = MIN_CHUNK_SIZE; i < packet_length - MIN_CHUNK_SIZE; i=i){
+
+            if((hash % MODULUS) == TARGET)
+            {
+
+                chunklist_ptr[list_index].length = i + 1 - prev_index; //Enter the length for nth element in the list //running length
+                prev_index = i + 1;
+                list_index++;
+                chunklist_ptr[list_index].start = &buff[i+1]; // Enter the chunk start for n+1 th element
+                i += MIN_CHUNK_SIZE;
+                hash = hash_func(buff,i);
+                continue;
+            }
+
+            i++;
+            hash = (hash * PRIME - (buff[i-1])*cdc_pow + (buff[i-1+WIN_SIZE]*PRIME));
+            
         }
 
-        i++;
-        hash = (hash * PRIME - (buff[i-1])*cdc_pow + (buff[i-1+WIN_SIZE]*PRIME));
-        
+        chunklist_ptr[list_index].length = packet_length - prev_index;
+        list_index++;
+        new_packet->num_chunks = list_index;
+
+        LOG(LOG_DEBUG, "Finished CDC, posting sem for sha\n");
+        sem_post(sem_cdc_sha);
+        LOG(LOG_INFO_1, "releasing semaphore for sha from cdc\n");
     }
-
-    chunklist_ptr[list_index].length = packet_length - prev_index;
-    list_index++;
-    new_packet->num_chunks = list_index;
-
-    return;
 
 }
