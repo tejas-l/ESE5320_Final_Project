@@ -1,7 +1,5 @@
 #include "LZW_HW_packetlevel.h"
 
-// extern int offset;
-// extern unsigned char* file;
 
 /* defines for compress function */
 
@@ -10,6 +8,8 @@
 #define MIN(A,B) ( (A)<(B) ? (A) : (B) );
 #define ARR_SIZE (8*1024)
 
+volatile bool lzw_done = 0;
+volatile bool compress_done = 0;
 
 uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
 
@@ -74,38 +74,20 @@ void read  (unsigned char* data_in,
             unsigned int len,
             hls::stream<unsigned char> &in_stream){
 
-    //printf("read print1");   
     for (unsigned int i = 0; i < len; i++){
         #pragma HLS PIPELINE
         in_stream.write(data_in[i]);  
     }
-    //printf("read print2");
-
-    return;
-
 }
 
 void execute_lzw(   hls::stream<unsigned char> &in_stream,
                     hls::stream<int> &lzw_out_stream,
-                    unsigned int len,
-                    int *data_output_index){
-    
-    //printf("executelzw print1");
+                    unsigned int len){
     
     uint64_t table[ARR_SIZE] = {0};
     unsigned char substring_array[ARR_SIZE] = {0};
     unsigned int  substring_arr_index = 0;
-    unsigned int index = 0;
 
-    // for(unsigned int i = 0; i < ARR_SIZE; i++){
-    //     #pragma HLS PIPELINE II=1
-    //     #pragma HLS UNROLL FACTOR=2
-	// 	table[i] = 0;
-	// 	data_out[i] = 0;
-	// 	substring_array[i] = 0;
-    // }
-
-    //printf("executelzw print2");
     
     for (unsigned int i = 0; i <= 255; i++) {
         unsigned char ch = char(i);
@@ -117,67 +99,53 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
     substring_arr_index++;
 
     int code = 256;
-    //printf("executelzw print3");
 
-    for (unsigned int i = 0; i < len; i++) {
-        if (i != len - 1){
-            c = in_stream.read();
-            substring_array[substring_arr_index] = c;
-            substring_arr_index++;
+    for (unsigned int i = 0; i <= len; i++) {
+        if( i < len){   
+            if (i != len - 1){
+                c = in_stream.read();
+                substring_array[substring_arr_index] = c;
+                substring_arr_index++;
+            }
+
+
+            uint64_t hash_result =  MurmurHash2((void*)substring_array,substring_arr_index,1);
+            //MurmurHash
+            int res = Murmur_find(hash_result,code,table);
+            if ( res < 0 ) {
+                int value = Murmur_find( MurmurHash2((void*)substring_array,substring_arr_index-1,1),code,table) ;
+                lzw_out_stream.write(value); /*function that returns index*/
+
+                table[code] = hash_result;  // Stores hash for p+c
+                code++;
+                substring_arr_index = 0;
+                substring_array[substring_arr_index] = c;
+                substring_arr_index++;
+                }
+        }            
+        else{
+            int value1 = Murmur_find( MurmurHash2(substring_array,substring_arr_index,1),code,table);  /*function that returns index*/
+            lzw_out_stream.write(value1);
+            lzw_done = 1;
         }
 
-
-        uint64_t hash_result =  MurmurHash2((void*)substring_array,substring_arr_index,1);
-        //MurmurHash
-        int res = Murmur_find(hash_result,code,table);
-        if ( res < 0 ) {
-            int value = Murmur_find( MurmurHash2((void*)substring_array,substring_arr_index-1,1),code,table) ;
-            lzw_out_stream.write(value); /*function that returns index*/
-            index++;
-
-            table[code] = hash_result;  // Stores hash for p+c
-            code++;
-            substring_arr_index = 0;
-            substring_array[substring_arr_index] = c;
-            substring_arr_index++;
-        }
 
     }
-    int value1 = Murmur_find( MurmurHash2(substring_array,substring_arr_index,1),code,table);  /*function that returns index*/
-    lzw_out_stream.write(value1);
-    index++;
-    *data_output_index = index;
-    //printf("executelzw print4");
-    
-    return;
+
 }
 
 void execute_compress ( hls::stream<int> &lzw_out_stream,
-                        hls::stream<unsigned char> &out_stream,
-                        int data_output_index,
-                        int *Output_length){
+                        hls::stream<unsigned char> &out_stream){
     
     uint64_t Length = 0;
     unsigned char Byte = 0;
     uint64_t output_index = 0;
-    //printf("executecomp print1");
-
-    uint32_t header = 0;
-    uint64_t compressed_size = ceil(13*(data_output_index) / 8.0);
-    header = ( compressed_size <<1); /* size of the new chunk */
-
-    out_stream.write(header & 0xFF);
-    out_stream.write((header >> 8) & 0xFF);
-    out_stream.write((header >> 16) & 0xFF);
-    out_stream.write((header >> 24) & 0xFF);
-
-    output_index += 4;
-
+    int i = 0;
     uint8_t rem_inBytes = CODE_LENGTH;
     uint8_t rem_outBytes = OUT_SIZE_BITS;
 
-    //printf("executecomp print2");
-    for(int i=0; i<data_output_index; i++){
+    while((!lzw_done) || (!lzw_out_stream.empty())){
+        i++;
         int inData = lzw_out_stream.read();
         rem_inBytes = CODE_LENGTH;
 
@@ -192,8 +160,6 @@ void execute_compress ( hls::stream<int> &lzw_out_stream,
             inData &= ((0x1 << rem_inBytes) - 1);
 
             if(rem_outBytes == 0){
-                // file[offset + Length/8 - 1] = Byte;
-                //output_vector.push_back(Byte);
                 out_stream.write(Byte); 
                 output_index++;
                 Byte = 0;
@@ -201,37 +167,35 @@ void execute_compress ( hls::stream<int> &lzw_out_stream,
             }
         }
     }
-    //printf("executecomp print3");
-    if(Length % 8 > 0){
-        Byte = Byte << (8 - (Length%8));
-        Length += (8 - (Length%8));
-        // file[offset + Length/8 - 1] = Byte;
-        //output_vector.push_back(Byte);
-        out_stream.write(Byte); 
-        output_index++;
+    if(lzw_done){
+        if(Length % 8 > 0){
+            Byte = Byte << (8 - (Length%8));
+            Length += (8 - (Length%8));
+            out_stream.write(Byte); 
+            output_index++;
+        }
+        compress_done = 1;
     }
-
-    //return output_vector;
-    //printf("executecomp print4");
-
-    *Output_length = output_index;
-
-    return;
-    
 }
 
 void write (hls::stream<unsigned char> &out_stream,
-            int out_len,
-            unsigned char* output){
-    //printf("write print1");
-    for(int i = 0; i < out_len; i++){
-        #pragma HLS PIPELINE
-        output[i] = out_stream.read();
+            unsigned char* output,
+            unsigned int *Output_length){
+    int i = 4;
+    while((!compress_done) || (!out_stream.empty())){
+        output[i++] = out_stream.read();
     }
-    //printf("write print2");
+    if(compress_done){
+        *Output_length = i;
+        uint32_t header = 0;
+        uint32_t length = i-4;
+        header = ( length <<1); /* size of the new chunk */
 
-    return;
-
+        output[0] = header & 0xFF;
+        output[1] = (header >> 8) & 0xFF;
+        output[2] = (header >> 16) & 0xFF;
+        output[3] = (header >> 24) & 0xFF;
+    }
 }
 
 
@@ -241,11 +205,6 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned char* ou
 #pragma HLS INTERFACE m_axi depth=8192 port=data_in bundle=p0
 #pragma HLS INTERFACE m_axi depth=8192 port=output bundle=p1
 
-    int data_output_index = 0;
-    // int *Output_length =0; 
-    int compression_length = 0; 
-
-    //printf("main print");
     #pragma HLS DATAFLOW
 
     hls::stream<unsigned char, 8*1024> out_stream;
@@ -254,13 +213,14 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int len, unsigned char* ou
 
     read(data_in, len, in_stream);
 
-    execute_lzw(in_stream, lzw_out_stream, len, &data_output_index);  
+    execute_lzw(in_stream, lzw_out_stream, len);  
 
-    execute_compress(lzw_out_stream, out_stream, data_output_index, &compression_length);
+    execute_compress(lzw_out_stream, out_stream);
 
-    write(out_stream, compression_length, output); 
+    write(out_stream, output, Output_length); 
 
     return;
 }
+
 
 

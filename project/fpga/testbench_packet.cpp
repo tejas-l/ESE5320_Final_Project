@@ -117,12 +117,12 @@ bool compare_outputs(vector<unsigned char> sw_output_code, unsigned char *hw_out
 
 int main()
 {
-	printf("hello");
-    // string test_string ="The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
-    string test_string = "gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGG";
+    string test_string ="The Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+    //string test_string = "gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGG";
    
     unsigned char* string_s = (uint8_t*)calloc(500,sizeof(uint8_t));
     unsigned char* hw_output_code = (unsigned char*)calloc(8192, sizeof(unsigned char));
+    printf("Input length %d\n",test_string.size());
 
     for(int i = 0; i < test_string.size(); i++)
     {
@@ -130,9 +130,8 @@ int main()
     }
 
     uint32_t* output_code_size = (uint32_t*)calloc(1,sizeof(uint32_t));
-    printf("hello");
-
     LZW_encoding_HW(string_s,test_string.size(), hw_output_code, output_code_size);
+    printf("HW out length %d\n",*output_code_size);
     vector<unsigned int> sw_output_code = LZW_SW(test_string);
 
     std::vector<unsigned char> sw_out = compress(sw_output_code);
