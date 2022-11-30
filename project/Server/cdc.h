@@ -4,5 +4,5 @@
 #include "../common/common.h"
 
 void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index); 
-void CDC_packet_level(packet_t *new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha);
+void CDC_packet_level(packet_t * const new_packet, sem_t *sem_cdc, sem_t *sem_cdc_sha, int *sem_done);
 #endif

@@ -1,5 +1,4 @@
 #include "SHA256_NEON.h"
-#include <semaphore.h>
 
 static const uint32_t K[] =
 {
@@ -265,45 +264,52 @@ void SHA256_NEON(chunk_t *chunk)//, wc_Sha3* sha3_384)
 
 }
 
-void SHA256_NEON_packet_level(packet_t *new_packet, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup)
+void SHA256_NEON_packet_level(packet_t *new_packet, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, int *sem_done)
 {
-    // wait for semaphore
-    sem_wait(sem_cdc_sha);
+    uint8_t shaChar[32]={0};
 
-	uint8_t shaChar[32]={0};
-    uint32_t num_chunks = new_packet->num_chunks;
-    // chunk_t *chunk_list_ptr = new_packet->chunk_list;
+    while(1){
+        // wait for semaphore
+        sem_wait(sem_cdc_sha);
 
-    // for(int k=0; k< 4; k++){
-    //     printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
-    // }
-
-    for(int c=0; c<num_chunks; c++){
-
-        /* initial state */
-        uint32_t state[8] = {
-            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-            0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
-        };
-
-        //printf("neon c=%d, start=%p, length=%d\n",c,new_packet->chunk_list[c].start, new_packet->chunk_list[c].length);
-
-        sha256_process_arm(state, &new_packet->chunk_list[c].start[0], new_packet->chunk_list[c].length);
-
-        for(int i=0; i<8 ; i++)
-        {
-            for (int j=0; j<=3; j++)
-            {
-                shaChar[(i<<2)+j] = state[i]>>((3-j)<<3);
-            }
+        if(*sem_done == 1){
+            sem_post(sem_sha_dedup);
+            return;
         }
 
-        std::string shaString(reinterpret_cast<char*>(shaChar), 32);
-        new_packet->chunk_list[c].SHA_signature = shaString;
+        uint32_t num_chunks = new_packet->num_chunks;
+        // chunk_t *chunk_list_ptr = new_packet->chunk_list;
+
+        // for(int k=0; k< 4; k++){
+        //     printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
+        // }
+
+        for(int c=0; c<num_chunks; c++){
+
+            /* initial state */
+            uint32_t state[8] = {
+                0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+                0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
+            };
+
+            //printf("neon c=%d, start=%p, length=%d\n",c,new_packet->chunk_list[c].start, new_packet->chunk_list[c].length);
+
+            sha256_process_arm(state, &new_packet->chunk_list[c].start[0], new_packet->chunk_list[c].length);
+
+            for(int i=0; i<8 ; i++)
+            {
+                for (int j=0; j<=3; j++)
+                {
+                    shaChar[(i<<2)+j] = state[i]>>((3-j)<<3);
+                }
+            }
+
+            std::string shaString(reinterpret_cast<char*>(shaChar), 32);
+            new_packet->chunk_list[c].SHA_signature = shaString;
+        }
+
+        // release semaphore for dedup
+        sem_post(sem_sha_dedup);   
     }
 
-    // release semaphore for dedup
-    sem_post(sem_sha_dedup);
-
-    return;
 }

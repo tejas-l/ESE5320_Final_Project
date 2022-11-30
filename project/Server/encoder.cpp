@@ -174,6 +174,9 @@ int main(int argc, char* argv[]) {
     sem_t sem_dedup_lzw;
     sem_t sem_lzw;
 
+    int sem_done;
+
+
     sem_init(&sem_cdc,0,1); // initialize with sem value 1 meaning ready
     sem_init(&sem_cdc_sha,0,0); // initialize with sem value 0 meaning not ready
     sem_init(&sem_sha_dedup,0,0); // initialize with sem value 0 meaning not ready
@@ -181,51 +184,25 @@ int main(int argc, char* argv[]) {
     sem_init(&sem_lzw,0,0); // initialize with sem value 0 meaning not ready
 
     // create threads for functions in the pipeline
-    // ths.push_back(std::thread(&compression_flow, &new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel));
     // cdc thread
-    ths.push_back(std::thread(&CDC_packet_level, &new_packet, &sem_cdc, &sem_cdc_sha));
+    ths.push_back(std::thread(&CDC_packet_level, &new_packet, &sem_cdc, &sem_cdc_sha, &sem_done));
     pin_thread_to_cpu(ths[0],0);
 
-    // for(auto &th : ths){
-    //     th.join();
-    // }
-
-    //ths.pop_back();
-
     // sha neon thread
-    ths.push_back(std::thread(&SHA256_NEON_packet_level, &new_packet, &sem_cdc_sha, &sem_sha_dedup));
+    ths.push_back(std::thread(&SHA256_NEON_packet_level, &new_packet, &sem_cdc_sha, &sem_sha_dedup, &sem_done));
     pin_thread_to_cpu(ths[1],0);
 
-    // for(auto &th : ths){
-    //     th.join();
-    // }
-
-    //ths.pop_back();
-
     // dedup thread
-    ths.push_back(std::thread(&dedup_packet_level, &new_packet, &sem_sha_dedup, &sem_dedup_lzw));
+    ths.push_back(std::thread(&dedup_packet_level, &new_packet, &sem_sha_dedup, &sem_dedup_lzw, &sem_done));
     pin_thread_to_cpu(ths[2],0);
 
-    // for(auto &th : ths){
-    //     th.join();
-    // }
-
-    //ths.pop_back();
-
     // lzw thread
-    ths.push_back(std::thread(&LZW_encoding_packet_level, &new_packet, &lzw_kernel, &sem_dedup_lzw, &sem_lzw));
+    ths.push_back(std::thread(&LZW_encoding_packet_level, &new_packet, &lzw_kernel, &sem_dedup_lzw, &sem_lzw, &sem_done));
     pin_thread_to_cpu(ths[3],0);
 
-    for(auto &th : ths){
-        th.join();
-    }
 
-    for(int i=0; i<4; i++){
-        ths.pop_back();
-    }
-
+    // wait until the packet is fully processed.
     sem_wait(&sem_lzw);
-    sem_post(&sem_cdc);
 
     // compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel);
 
@@ -257,87 +234,33 @@ int main(int argc, char* argv[]) {
         new_packet.length = length;
         Input_bytes = length;
 
+        LOG(LOG_DEBUG, "posted cdc sem\n");
+        sem_post(&sem_cdc);
+
         LOG(LOG_DEBUG,"Start of Loop, packet size = %d\r\n",length);
-
-        // compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel);
-
-        // ths.push_back(std::thread(&compression_flow, &new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel));
-
-        // pin_thread_to_cpu(ths[0],0);
-
-        // for(auto &th : ths){
-        //     th.join();
-        // }
-
-        // ths.pop_back();
-
-        LOG(LOG_DEBUG, "ths size = %d\n",ths.size());
-
-        ths.push_back(std::thread(&CDC_packet_level, &new_packet, &sem_cdc, &sem_cdc_sha));
-        pin_thread_to_cpu(ths[0],0);
-
-        LOG(LOG_DEBUG, "CDC thread created\n");
-
-        // for(auto &th : ths){
-        //     th.join();
-        // }
-
-        // ths.pop_back();
-
-        // sha neon thread
-        ths.push_back(std::thread(&SHA256_NEON_packet_level, &new_packet, &sem_cdc_sha, &sem_sha_dedup));
-        pin_thread_to_cpu(ths[1],0);
-
-        LOG(LOG_DEBUG, "SHA thread created\n");
-
-        // for(auto &th : ths){
-        //     th.join();
-        // }
-
-        // ths.pop_back();
-
-        // dedup thread
-        ths.push_back(std::thread(&dedup_packet_level, &new_packet, &sem_sha_dedup, &sem_dedup_lzw));
-        pin_thread_to_cpu(ths[2],0);
-
-        LOG(LOG_DEBUG, "Dedup thread created\n");
-
-        // for(auto &th : ths){
-        //     th.join();
-        // }
-
-        // ths.pop_back();
-
-        // lzw thread
-        ths.push_back(std::thread(&LZW_encoding_packet_level, &new_packet, &lzw_kernel, &sem_dedup_lzw, &sem_lzw));
-        pin_thread_to_cpu(ths[3],0);
-
-        LOG(LOG_DEBUG, "LZW thread created\n");
-
-        LOG(LOG_DEBUG, "Waiting for threads to finish\n");
-
-        for(auto &th : ths){
-            th.join();
-        }
-
-        LOG(LOG_DEBUG, "theads joined\n");
-
-        for(int i=0; i<4; i++){
-            ths.pop_back();
-        }
 
         sem_wait(&sem_lzw);
         LOG(LOG_DEBUG, "received lzw semaphore\n");
-        sem_post(&sem_cdc);
-
-        LOG(LOG_DEBUG, "posted cdc sem\n");
 
         writer++;
+    }
+
+    sem_done = 1;
+    sem_post(&sem_cdc);
+    sem_wait(&sem_lzw);
+
+    for(auto &th : ths){
+        th.join();
+    }
+
+    for(int i=0; i<4; i++){
+        ths.pop_back();
     }
 
     total_time.stop();
     
     LOG(LOG_INFO_1,"Number of bytes going into LZW - %d \n",LZW_in_bytes);
+
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
     int bytes_written = fwrite(&file[0], 1, offset, outfd);
