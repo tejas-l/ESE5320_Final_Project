@@ -78,7 +78,7 @@ void read  (unsigned char* data_in,
     uint32_t running_length = 0;
     for(uint64_t i =0; i < num_chunks; i++){
         if(chunk_isdups[i] == 1){
-            dup_read.write(chuk_numbers[i]);
+            dup_read.write(chunk_numbers[i]);
         }else{
             for (unsigned int j = 0; j < chunk_lengths[i]; j++){
 #pragma HLS PIPELINE
@@ -228,41 +228,69 @@ void write (hls::stream<unsigned char> &out_stream,
             unsigned int *Output_length){
     int unique_index = 0;
     int out_index = 0;
+    int unique_length = 0;
     for(uint64_t chunks =0; chunks < num_chunks; chunks++){
         if(chunk_isdups[chunks] == 1){
             unsigned int dup_chunk = dup_executecomp.read();
+            //printf("HW - Writing Duplicate header for string %d at element %d\n",chunks,out_index);
             uint32_t header_dup = 0;
             header_dup |= (dup_chunk<<1);
-            header_dup |= (0x1);
+            header_dup |= (0x01);
             output[out_index++] = header_dup & 0xFF;
+            //printf("%02x\n",output[out_index - 1]);
             output[out_index++] = (header_dup >> 8) & 0xFF;
+            //printf("%02x\n",output[out_index - 1]);
             output[out_index++] = (header_dup >> 16) & 0xFF;
+            //printf("%02x\n",output[out_index - 1]);
             output[out_index++] = (header_dup >> 24) & 0xFF;
+            //printf("%02x\n",output[out_index - 1]);
+
+            //printf("HW - Writen Header %02x\n", header_dup);
+
+            
+
         }else{
             unique_index = out_index;
             out_index += 4;
-            while(compress_sync.read() == 0){
+            unsigned char comp_sync = compress_sync.read();
+            while(comp_sync == 0){
+                comp_sync = compress_sync.read();
                 output[out_index++] = out_stream.read();
                 unique_length++;
+                
                 }
-            if(compress_sync.read() == 1){
+            if(comp_sync == 1){
                 uint32_t header = 0;
                 header = ( unique_length <<1); /* size of the new chunk */
+                printf("HW - Writing Unique header for string %d which has length %d\n",chunks,unique_length);
+                //printf("HW - Writing Unique header for string%d at element%d\n",chunks,unique_index);
+
                 unique_length = 0;
                 output[unique_index++] = header & 0xFF;
+                //printf("%02x\n",output[unique_index - 1]);
                 output[unique_index++] = (header >> 8) & 0xFF;
+                //printf("%02x\n",output[unique_index - 1]);
                 output[unique_index++] = (header >> 16) & 0xFF;
+                //printf("%02x\n",output[unique_index - 1]);
                 output[unique_index++] = (header >> 24) & 0xFF;
+                //printf("%02x\n",output[unique_index - 1]);
+                //printf("HW - Writen Header %02x\n", header);
+
+
              }
 
         }
+
+    }
+
+    *Output_length = out_index;
+            
 }
 
 
 
-
 void LZW_encoding_HW(unsigned char* data_in, unsigned int* chunk_lengths, unsigned int* chunk_numbers,
-                     unsigned char* chunk_isdups, unsigned char* output, unsigned int* Output_length )//changed output array datatype
+                     unsigned char* chunk_isdups, uint64_t num_chunks, unsigned char* output, unsigned int* Output_length)//changed output array datatype
 {
 
 #pragma HLS INTERFACE m_axi depth=8192 port=data_in bundle=p0
@@ -270,17 +298,22 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int* chunk_lengths, unsign
 
     #pragma HLS DATAFLOW
 
-    hls::stream<unsigned char, 8*1024> out_stream;
-    hls::stream<int, 8*1024> lzw_out_stream;
-    hls::stream<unsigned char, 8*1024> in_stream;
+    hls::stream<unsigned char, 8*1024> out_stream("out_stream");
+    hls::stream<int, 8*1024> lzw_out_stream("lzw_out_stream");
+    hls::stream<unsigned char, 8*1024> in_stream("in_stream");
+    hls::stream<unsigned int, 300> dup_read("dup_read");
+    hls::stream<unsigned int, 300> dup_executelzw("dup_executelzw");
+    hls::stream<unsigned int, 300> dup_executecomp("dup_executecomp");
+    hls::stream<unsigned char, 300> compress_sync("compress_sync");
 
-    read(data_in, len, in_stream);
 
-    execute_lzw(in_stream, lzw_out_stream, len);  
+    read(data_in, in_stream, dup_read, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks);
 
-    execute_compress(lzw_out_stream, out_stream);
+    execute_lzw(in_stream, lzw_out_stream, dup_read, dup_executelzw, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks);  
 
-    write(out_stream, output, Output_length); 
+    execute_compress(lzw_out_stream, out_stream, dup_executelzw, dup_executecomp, compress_sync, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks);
+
+    write(out_stream, dup_executecomp, compress_sync, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks, output, Output_length); 
 
     return;
 }
