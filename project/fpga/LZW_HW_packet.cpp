@@ -7,6 +7,10 @@
 #define CODE_LENGTH 13
 #define MIN(A,B) ( (A)<(B) ? (A) : (B) );
 #define ARR_SIZE (8*1024)
+#define MIN_CHUNK_SIZE (16)
+#define MAX_PACKET_SIZE 8*1024
+#define MAX_NUM_CHUNKS (MAX_PACKET_SIZE/MIN_CHUNK_SIZE)
+
 
 volatile bool lzw_done = 0;
 volatile bool compress_done = 0;
@@ -72,35 +76,61 @@ int Murmur_find(uint64_t hash_result,int code, uint64_t* table){
 
 void read  (unsigned char* data_in,
             hls::stream<unsigned char> &in_stream,
-            hls::stream<unsigned int> &dup_read,
-            unsigned int* chunk_lengths, unsigned int* chunk_numbers,
-            unsigned char* chunk_isdups, uint64_t num_chunks){
+            hls::stream<unsigned int> &chunk_numbers_read,
+            hls::stream<unsigned int> &chunk_lengths_read,
+            hls::stream<unsigned char> &chunk_isdups_read,
+            unsigned int* chunk_numbers, 
+            unsigned int* chunk_lengths,
+            unsigned char* chunk_isdups,
+            uint64_t num_chunks_local){
+
     uint32_t running_length = 0;
-    for(uint64_t i =0; i < num_chunks; i++){
-        if(chunk_isdups[i] == 1){
-            dup_read.write(chunk_numbers[i]);
+    unsigned int chunk_number_read = 0;
+    unsigned int chunk_length_read = 0;
+    unsigned char chunk_isdup_read = 0;
+    for(uint64_t i =0; i < num_chunks_local; i++){
+
+        chunk_number_read = chunk_numbers[i];
+        chunk_length_read = chunk_lengths[i];
+        chunk_isdup_read = chunk_isdups[i];
+        chunk_lengths_read.write(chunk_length_read);
+        chunk_isdups_read.write(chunk_isdup_read);
+
+        if(chunk_isdup_read == 1){
+            chunk_numbers_read.write(chunk_number_read);
         }else{
-            for (unsigned int j = 0; j < chunk_lengths[i]; j++){
+            for (unsigned int j = 0; j < chunk_length_read; j++){
 #pragma HLS PIPELINE
             in_stream.write(data_in[running_length + j]);  
             }
         }
-        running_length += chunk_lengths[i];
+        running_length += chunk_length_read;
     }
 }
 
 
 void execute_lzw(   hls::stream<unsigned char> &in_stream,
                     hls::stream<int> &lzw_out_stream,
-                    hls::stream<unsigned int> &dup_read,
-                    hls::stream<unsigned int> &dup_executelzw,
-                    unsigned int* chunk_lengths, unsigned int* chunk_numbers,
-                    unsigned char* chunk_isdups, uint64_t num_chunks){
+                    hls::stream<unsigned int> &chunk_numbers_read,
+                    hls::stream<unsigned int> &chunk_lengths_read,
+                    hls::stream<unsigned char> &chunk_isdups_read,
+                    hls::stream<unsigned int> &chunk_numbers_lzw,
+                    hls::stream<unsigned char> &chunk_isdups_lzw,
+                    uint64_t num_chunks_local
+                    ){
+    
+    unsigned int chunk_number_lzw = 0;
+    unsigned int chunk_length_lzw = 0;
+    unsigned char chunk_isdup_lzw = 0;
+    for(uint64_t chunks =0; chunks < num_chunks_local; chunks++){
+        chunk_length_lzw = chunk_lengths_read.read();
+        chunk_isdup_lzw = chunk_isdups_read.read();
+        // chunk_lengths_lzw.write(chunk_length_lzw);
+        chunk_isdups_lzw.write(chunk_isdup_lzw);
 
-    for(uint64_t chunks =0; chunks < num_chunks; chunks++){
-        if(chunk_isdups[chunks] == 1){
-            unsigned int dup_chunk = dup_read.read();
-            dup_executelzw.write(dup_chunk);
+        if(chunk_isdup_lzw == 1){
+            chunk_number_lzw = chunk_numbers_read.read();
+            chunk_numbers_lzw.write(chunk_number_lzw);
         }else{
             uint64_t table[ARR_SIZE] = {0};
             unsigned char substring_array[ARR_SIZE] = {0};
@@ -118,9 +148,9 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
             int code = 256;
 
-            for (unsigned int i = 0; i <= chunk_lengths[chunks] + 1; i++) {
-                if( i < chunk_lengths[chunks]){   
-                    if (i != chunk_lengths[chunks] - 1){
+            for (unsigned int i = 0; i <= chunk_length_lzw + 1; i++) {
+                if( i < chunk_length_lzw){   
+                    if (i != chunk_length_lzw - 1){
                         c = in_stream.read();
                         substring_array[substring_arr_index] = c;
                         substring_arr_index++;
@@ -141,12 +171,12 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
                         substring_arr_index++;
                         }
                 }            
-                else if(i == chunk_lengths[chunks]){
+                else if(i == chunk_length_lzw){
                     int value1 = Murmur_find( MurmurHash2(substring_array,substring_arr_index,1),code,table);  /*function that returns index*/
                     lzw_out_stream.write(value1);
                     // lzw_done = 1;
                 }
-                if(i == chunk_lengths[chunks] + 1){
+                if(i == chunk_length_lzw + 1){
                     lzw_out_stream.write(-1);
                 }
 
@@ -159,16 +189,20 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
 void execute_compress ( hls::stream<int> &lzw_out_stream,
                         hls::stream<unsigned char> &out_stream,
-                        hls::stream<unsigned int> &dup_executelzw,
-                        hls::stream<unsigned int> &dup_executecomp,
                         hls::stream<unsigned char> &compress_sync,
-                        unsigned int* chunk_lengths, unsigned int* chunk_numbers,
-                        unsigned char* chunk_isdups, uint64_t num_chunks){
-    
-    for(uint64_t chunks =0; chunks < num_chunks; chunks++){
-        if(chunk_isdups[chunks] == 1){
-            unsigned int dup_chunk = dup_executelzw.read();
-            dup_executecomp.write(dup_chunk);
+                        hls::stream<unsigned int> &chunk_numbers_lzw,
+                        hls::stream<unsigned char> &chunk_isdups_lzw,
+                        hls::stream<unsigned int> &chunk_numbers_comp,
+                        hls::stream<unsigned char> &chunk_isdups_comp,
+                        uint64_t num_chunks_local){
+    unsigned int chunk_number_comp = 0;
+    unsigned char chunk_isdup_comp = 0;
+    for(uint64_t chunks =0; chunks < num_chunks_local; chunks++){
+        chunk_isdup_comp = chunk_isdups_lzw.read();
+        chunk_isdups_comp.write(chunk_isdup_comp);        
+        if(chunk_isdup_comp == 1){
+            chunk_number_comp = chunk_numbers_lzw.read();
+            chunk_numbers_comp.write(chunk_number_comp);
         }else{
             uint64_t Length = 0;
             unsigned char Byte = 0;
@@ -220,18 +254,22 @@ void execute_compress ( hls::stream<int> &lzw_out_stream,
 
 
 void write (hls::stream<unsigned char> &out_stream,
-            hls::stream<unsigned int> &dup_executecomp,
             hls::stream<unsigned char> &compress_sync,
-            unsigned int* chunk_lengths, unsigned int* chunk_numbers,
-            unsigned char* chunk_isdups, uint64_t num_chunks,
+            hls::stream<unsigned int> &chunk_numbers_comp,
+            hls::stream<unsigned char> &chunk_isdups_comp,
+            uint64_t num_chunks_local,
             unsigned char* output, 
             unsigned int *Output_length){
     int unique_index = 0;
     int out_index = 0;
     int unique_length = 0;
-    for(uint64_t chunks =0; chunks < num_chunks; chunks++){
-        if(chunk_isdups[chunks] == 1){
-            unsigned int dup_chunk = dup_executecomp.read();
+    unsigned int chunk_number_write = 0;
+    unsigned char chunk_isdup_write = 0;
+    for(uint64_t chunks =0; chunks < num_chunks_local; chunks++){
+        chunk_isdup_write = chunk_isdups_comp.read();
+        if(chunk_isdup_write == 1){
+            chunk_number_write = chunk_numbers_comp.read();
+            unsigned int dup_chunk = chunk_number_write;
             //printf("HW - Writing Duplicate header for string %d at element %d\n",chunks,out_index);
             uint32_t header_dup = 0;
             header_dup |= (dup_chunk<<1);
@@ -262,7 +300,7 @@ void write (hls::stream<unsigned char> &out_stream,
             if(comp_sync == 1){
                 uint32_t header = 0;
                 header = ( unique_length <<1); /* size of the new chunk */
-                printf("HW - Writing Unique header for string %d which has length %d\n",chunks,unique_length);
+                //printf("HW - Writing Unique header for string %d which has length %d\n",chunks,unique_length);
                 //printf("HW - Writing Unique header for string%d at element%d\n",chunks,unique_index);
 
                 unique_length = 0;
@@ -293,27 +331,62 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int* chunk_lengths, unsign
                      unsigned char* chunk_isdups, uint64_t num_chunks, unsigned char* output, unsigned int* Output_length)//changed output array datatype
 {
 
-#pragma HLS INTERFACE m_axi depth=8192 port=data_in bundle=p0
+#pragma HLS INTERFACE m_axi depth=8192 port=data_in bundle=p2
 #pragma HLS INTERFACE m_axi depth=8192 port=output bundle=p1
+#pragma HLS INTERFACE m_axi depth=512 port=chunk_lengths bundle=p0
+#pragma HLS INTERFACE m_axi depth=512 port=chunk_numbers bundle=p0
+#pragma HLS INTERFACE m_axi depth=512 port=chunk_isdups bundle=p0
 
+// #pragma HLS INTERFACE s_axilite port=data_in bundle=control
+// #pragma HLS INTERFACE s_axilite port=output bundle=control
+// #pragma HLS INTERFACE s_axilite port=chunk_lenghts bundle=control
+// #pragma HLS INTERFACE s_axilite port=chunk_numbers bundle=control
+// #pragma HLS INTERFACE s_axilite port=chunk_isdups bundle=control
+// #pragma HLS INTERFACE s_axilite port=return bundle=control
+
+
+// unsigned int chunk_lengths_local[MAX_NUM_CHUNKS];
+// unsigned int chunk_numbers_local[MAX_NUM_CHUNKS];
+// unsigned char chunk_isdups_local[MAX_NUM_CHUNKS];
+uint64_t num_chunks_local = num_chunks; 
+
+// #pragma HLS stable variable=chunk_lengths_local
+// #pragma HLS stable variable=chunk_numbers_local
+// #pragma HLS stable variable=chunk_isdups_local
+// #pragma HLS stable variable=num_chunks_local
+
+
+//     for(int i = 0; i< num_chunks_local; i++){
+// #pragma HLS UNROLL
+//         chunk_lengths_local[i]= chunk_lengths[i];
+//         chunk_numbers_local[i]= chunk_numbers[i];
+//         chunk_isdups_local[i]= chunk_isdups[i];
+
+//     }
     #pragma HLS DATAFLOW
 
     hls::stream<unsigned char, 8*1024> out_stream("out_stream");
     hls::stream<int, 8*1024> lzw_out_stream("lzw_out_stream");
     hls::stream<unsigned char, 8*1024> in_stream("in_stream");
-    hls::stream<unsigned int, 300> dup_read("dup_read");
-    hls::stream<unsigned int, 300> dup_executelzw("dup_executelzw");
-    hls::stream<unsigned int, 300> dup_executecomp("dup_executecomp");
     hls::stream<unsigned char, 300> compress_sync("compress_sync");
+    hls::stream<unsigned int, 300> chunk_numbers_read("chunk_numbers_read");
+    hls::stream<unsigned int, 300> chunk_numbers_lzw("chunk_numbers_lzw");
+    hls::stream<unsigned int, 300> chunk_numbers_comp("chunk_numbers_comp");
+    hls::stream<unsigned int, 300> chunk_lengths_read("chunk_lengths_read");
+    //hls::stream<unsigned int, 300> chunk_lengths_lzw("chunk_lengths_lzw");
+    //hls::stream<unsigned int, 300> chunk_lengths_comp("chunk_lengths_comp");
+    hls::stream<unsigned char, 300> chunk_isdups_read("chunk_isdups_read");
+    hls::stream<unsigned char, 300> chunk_isdups_lzw("chunk_isdups_lzw");
+    hls::stream<unsigned char, 300> chunk_isdups_comp("chunk_isdups_comp");
 
 
-    read(data_in, in_stream, dup_read, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks);
+    read(data_in, in_stream, chunk_numbers_read, chunk_lengths_read, chunk_isdups_read, chunk_numbers, chunk_lengths, chunk_isdups, num_chunks_local);
 
-    execute_lzw(in_stream, lzw_out_stream, dup_read, dup_executelzw, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks);  
+    execute_lzw(in_stream, lzw_out_stream, chunk_numbers_read, chunk_lengths_read, chunk_isdups_read, chunk_numbers_lzw, chunk_isdups_lzw, num_chunks_local);  
 
-    execute_compress(lzw_out_stream, out_stream, dup_executelzw, dup_executecomp, compress_sync, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks);
+    execute_compress(lzw_out_stream, out_stream, compress_sync, chunk_numbers_lzw, chunk_isdups_lzw, chunk_numbers_comp, chunk_isdups_comp, num_chunks_local);
 
-    write(out_stream, dup_executecomp, compress_sync, chunk_lengths, chunk_numbers, chunk_isdups, num_chunks, output, Output_length); 
+    write(out_stream, compress_sync, chunk_numbers_comp, chunk_isdups_comp, num_chunks_local, output, Output_length); 
 
     return;
 }
