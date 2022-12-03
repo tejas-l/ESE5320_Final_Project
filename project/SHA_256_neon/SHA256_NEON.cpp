@@ -264,9 +264,10 @@ void SHA256_NEON(chunk_t *chunk)//, wc_Sha3* sha3_384)
 
 }
 
-void SHA256_NEON_packet_level(packet_t *new_packet, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, int *sem_done)
+void SHA256_NEON_packet_level(packet_t **packet_ring_buf, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, int *sem_done)
 {
     uint8_t shaChar[32]={0};
+    static int packet_num = 0;
 
     while(1){
         // wait for semaphore
@@ -277,12 +278,13 @@ void SHA256_NEON_packet_level(packet_t *new_packet, sem_t *sem_cdc_sha, sem_t *s
             return;
         }
 
-        uint32_t num_chunks = new_packet->num_chunks;
-        // chunk_t *chunk_list_ptr = new_packet->chunk_list;
+        packet_t *new_packet = packet_ring_buf[packet_num];
+        packet_num++;
+        if(packet_num == NUM_PACKETS){
+            packet_num = 0; // ring buffer calculations
+        }
 
-        // for(int k=0; k< 4; k++){
-        //     printf("chunk %d, start = %p, length= %d\n",k,new_packet->chunk_list[k].start,new_packet->chunk_list[k].length);
-        // }
+        uint32_t num_chunks = new_packet->num_chunks;
 
         for(int c=0; c<num_chunks; c++){
 
@@ -292,7 +294,6 @@ void SHA256_NEON_packet_level(packet_t *new_packet, sem_t *sem_cdc_sha, sem_t *s
                 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19
             };
 
-            //printf("neon c=%d, start=%p, length=%d\n",c,new_packet->chunk_list[c].start, new_packet->chunk_list[c].length);
 
             sha256_process_arm(state, &new_packet->chunk_list[c].start[0], new_packet->chunk_list[c].length);
 

@@ -25,7 +25,7 @@
 
 
 
-#define NUM_PACKETS 8
+#define NUM_PACKETS 32
 #define pipe_depth 4
 #define DONE_BIT_L (1 << 7)
 #define DONE_BIT_H (1 << 15)

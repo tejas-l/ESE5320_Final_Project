@@ -174,8 +174,9 @@ uint64_t LZW_encoding(chunk_t* chunk)
     return compress(from_fpga,*LZW_HW_output_length_ptr);
 }
 
-uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw, int *sem_done)
+uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw, int *sem_done)
 {
+    static int packet_num = 0;
 
     while(1){
         // wait for semaphore released by dedup
@@ -186,24 +187,27 @@ uint64_t LZW_encoding_packet_level(packet_t *new_packet, LZW_kernel_call *lzw_ke
             return offset;
         }
 
-        LOG(LOG_INFO_1, "semaphore received, starting lzw\n");
+        packet_t *new_packet = packet_ring_buf[packet_num];
+        packet_num++;
+        if(packet_num == NUM_PACKETS){
+            packet_num = 0; // ring buffer calculations
+        }
+
+        LOG(LOG_INFO_1, "semaphore received, starting lzw, packet number: %d\n",packet_num);
 
         chunk_t *chunklist_ptr = new_packet->chunk_list;
         uint64_t num_chunks = new_packet->num_chunks;
+        LOG(LOG_DEBUG,"PACKET_NUM = %d, LZW NUM CHUNK = %d\n",packet_num,num_chunks);
 
         for(uint64_t i = 0; i < num_chunks; i++){
+
             if(chunklist_ptr[i].is_duplicate){
+                LOG(LOG_DEBUG,"PACKET_NUM = %d, i = %d, duplicate chunk = %d\n",packet_num,i,chunklist_ptr[i].number);
                 uint32_t header = 0;
                 header |= (chunklist_ptr[i].number<<1); // 31 bits specify the number of the chunk to be duplicated
                 header |= (0x1); // LSB 1 indicates this is a duplicate chunk
 
-                //LOG(LOG_INFO_2,"DUPLICATE CHUNK : %p CHUNK NO : %d\n",new_chunk->start, dup_chunk_num);
-                //LOG(LOG_INFO_2,"Header written %d\n",header);
-
                 memcpy(&file[offset], &header, sizeof(header)); // write header to the file
-
-                // printf("Header written to file - \n");
-                LOG(LOG_INFO_1,"Header written %d\n",header);
 
                 offset += sizeof(header);
 

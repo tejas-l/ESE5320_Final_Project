@@ -19,7 +19,25 @@ void pin_thread_to_cpu(std::thread &t, int cpu_num)
 #endif
 }
 
-// void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel);
+void pin_main_thread_to_cpu0()
+{
+#if defined(WIN32) || defined(_WIN32) || defined(__WIN32__) || defined(__NT__) || defined(__APPLE__)
+    return;
+#else
+    pthread_t thread;
+    thread = pthread_self();
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(0, &cpuset);
+    int rc =
+        pthread_setaffinity_np(thread, sizeof(cpu_set_t), &cpuset);
+    if (rc != 0)
+    {
+        std::cerr << "Error calling pthread_setaffinity_np: " << rc << "\n";
+    }
+#endif
+}
+
 
 int offset = 0;
 unsigned char* file;
@@ -48,30 +66,6 @@ stopwatch sha_time;
 stopwatch dedup_time;
 stopwatch lzw_time;
 
-// void compression_flow(packet_t *new_packet, unsigned char *buffer, int length, chunk_t *new_chunk, LZW_kernel_call *lzw_kernel)
-// {
-//     static int num_packet = 0;
-//     num_packet++;
-    
-//     cdc_time.start();
-//     CDC_packet_level(new_packet);
-//     cdc_time.stop();
-
-//     sha_time.start();
-//     SHA256_NEON_packet_level(new_packet);
-//     sha_time.stop();
-
-//     dedup_time.start();
-//     dedup_packet_level(new_packet);
-//     dedup_time.stop();
-
-//     LOG(LOG_INFO_1,"LZW packet level called\n");
-
-//     lzw_time.start();
-//     LZW_encoding_packet_level(new_packet,lzw_kernel);
-//     lzw_time.stop();
-
-// }
 
 int main(int argc, char* argv[]) {
     stopwatch ethernet_timer;
@@ -83,6 +77,16 @@ int main(int argc, char* argv[]) {
     ESE532_Server server;
     chunk_t new_chunk;
     packet_t new_packet;
+
+    packet_t *packet_ring_buffer[NUM_PACKETS];
+    int packet_num = 0;
+    int num_packets_in_pipeline = 0;
+
+    int num_packets_received = 0;
+    int num_packets_processed = 0;
+
+    /* packets structs for different stages in pipeline */
+
     new_chunk.number = 0;
 
     int input_bytes=0;
@@ -117,6 +121,13 @@ int main(int argc, char* argv[]) {
             std::cout << "aborting " << std::endl;
             return 1;
         }
+
+        /* mem alloc for num packets */
+        packet_ring_buffer[i] = (packet_t *) malloc(1*sizeof(packet_t));
+        if (input[i] == NULL) {
+            std::cout << "aborting " << std::endl;
+            return 1;
+        }
     }
 
     server.setup_server(blocksize);
@@ -140,11 +151,14 @@ int main(int argc, char* argv[]) {
     data_received_bytes += length; // add the length of data received to the byte counter
     std::cout << " packet length " << length << std::endl;
 
-    new_packet.buffer = &buffer[HEADER];//input[writer];
-    new_packet.length = length;
+    packet_ring_buffer[packet_num]->buffer = &buffer[HEADER];
+    packet_ring_buffer[packet_num]->length = length;
+    packet_num++;
+    num_packets_in_pipeline++;
+    writer++;
+    num_packets_received++;
 
     cl_int err;
-    //std::string binaryFile = argv[1];
     std::string binaryFile = "LZW_encoding_HW.xclbin";
     unsigned fileBufSize;
     std::vector<cl::Device> devices = get_xilinx_devices();
@@ -159,8 +173,6 @@ int main(int argc, char* argv[]) {
     LZW_kernel_call lzw_kernel(context, program, q);
 
 
-    total_time.start();
-
     /*
      * Create threads for the pipelined implementation 
      * of compression flow.
@@ -168,6 +180,7 @@ int main(int argc, char* argv[]) {
     std::vector<std::thread> ths;
 
 
+    // semaphores for thread synchronization
     sem_t sem_cdc;
     sem_t sem_cdc_sha;
     sem_t sem_sha_dedup;
@@ -177,36 +190,36 @@ int main(int argc, char* argv[]) {
     int sem_done;
 
 
-    sem_init(&sem_cdc,0,1); // initialize with sem value 1 meaning ready
+    sem_init(&sem_cdc,0,0); // initialize with sem value 0 meaning not ready
     sem_init(&sem_cdc_sha,0,0); // initialize with sem value 0 meaning not ready
     sem_init(&sem_sha_dedup,0,0); // initialize with sem value 0 meaning not ready
     sem_init(&sem_dedup_lzw,0,0); // initialize with sem value 0 meaning not ready
     sem_init(&sem_lzw,0,0); // initialize with sem value 0 meaning not ready
 
+    pin_main_thread_to_cpu0();
+
     // create threads for functions in the pipeline
     // cdc thread
-    ths.push_back(std::thread(&CDC_packet_level, &new_packet, &sem_cdc, &sem_cdc_sha, &sem_done));
+    ths.push_back(std::thread(&CDC_packet_level, &packet_ring_buffer[0], &sem_cdc, &sem_cdc_sha, &sem_done));
     pin_thread_to_cpu(ths[0],0);
 
     // sha neon thread
-    ths.push_back(std::thread(&SHA256_NEON_packet_level, &new_packet, &sem_cdc_sha, &sem_sha_dedup, &sem_done));
-    pin_thread_to_cpu(ths[1],0);
+    ths.push_back(std::thread(&SHA256_NEON_packet_level, &packet_ring_buffer[0], &sem_cdc_sha, &sem_sha_dedup, &sem_done));
+    pin_thread_to_cpu(ths[1],1);
 
     // dedup thread
-    ths.push_back(std::thread(&dedup_packet_level, &new_packet, &sem_sha_dedup, &sem_dedup_lzw, &sem_done));
-    pin_thread_to_cpu(ths[2],0);
+    ths.push_back(std::thread(&dedup_packet_level, &packet_ring_buffer[0], &sem_sha_dedup, &sem_dedup_lzw, &sem_done));
+    pin_thread_to_cpu(ths[2],2);
 
     // lzw thread
-    ths.push_back(std::thread(&LZW_encoding_packet_level, &new_packet, &lzw_kernel, &sem_dedup_lzw, &sem_lzw, &sem_done));
-    pin_thread_to_cpu(ths[3],0);
+    ths.push_back(std::thread(&LZW_encoding_packet_level, &packet_ring_buffer[0], &lzw_kernel, &sem_dedup_lzw, &sem_lzw, &sem_done));
+    pin_thread_to_cpu(ths[3],3);
 
+    total_time.start();
 
-    // wait until the packet is fully processed.
-    sem_wait(&sem_lzw);
+    sem_post(&sem_cdc);
 
-    // compression_flow(&new_packet, &buffer[HEADER], length, &new_chunk, &lzw_kernel);
-
-    writer++;
+    LOG(LOG_DEBUG,"num_packets_in_pipeline = %d\n",num_packets_in_pipeline);
 
     //last message
     while (!done) {
@@ -214,6 +227,12 @@ int main(int argc, char* argv[]) {
         if (writer == NUM_PACKETS) {
             writer = 0;
         }
+        if (packet_num == NUM_PACKETS){
+            packet_num = 0;
+        }
+
+        LOG(LOG_DEBUG,"num_packets_in_pipeline = %d\n",num_packets_in_pipeline);
+
 
         ethernet_timer.start();
         server.get_packet(input[writer]);
@@ -230,24 +249,41 @@ int main(int argc, char* argv[]) {
         length &= ~DONE_BIT_H;
         data_received_bytes += length; // add the length of data received to the byte counter
 
-        new_packet.buffer = &buffer[HEADER];//input[writer];
-        new_packet.length = length;
+        packet_ring_buffer[packet_num]->buffer = &buffer[HEADER];
+        packet_ring_buffer[packet_num]->length = length;
+        packet_num++;
+        LOG(LOG_DEBUG,"packet_number = %d\n",packet_num);
+        num_packets_in_pipeline++;
+        writer++;
+        num_packets_received++;
+
         Input_bytes = length;
 
-        LOG(LOG_DEBUG, "posted cdc sem\n");
+        LOG(LOG_DEBUG, "posted cdc sem, num packets in pipeline = %d\n",num_packets_in_pipeline);
         sem_post(&sem_cdc);
 
+        if(num_packets_in_pipeline == NUM_PACKETS){//(NUM_PACKETS-1)){
+            sem_wait(&sem_lzw);
+            num_packets_in_pipeline--;
+            num_packets_processed++;
+            LOG(LOG_DEBUG, "received lzw semaphore\n");
+        }
+
         LOG(LOG_DEBUG,"Start of Loop, packet size = %d\r\n",length);
-
-        sem_wait(&sem_lzw);
-        LOG(LOG_DEBUG, "received lzw semaphore\n");
-
-        writer++;
     }
 
+    while(num_packets_in_pipeline--){
+        sem_wait(&sem_lzw);
+        num_packets_processed++;
+    }
+
+    total_time.stop();
+    
+    // make the threads exit
     sem_done = 1;
     sem_post(&sem_cdc);
     sem_wait(&sem_lzw);
+    
 
     for(auto &th : ths){
         th.join();
@@ -257,9 +293,9 @@ int main(int argc, char* argv[]) {
         ths.pop_back();
     }
 
-    total_time.stop();
-    
     LOG(LOG_INFO_1,"Number of bytes going into LZW - %d \n",LZW_in_bytes);
+    LOG(LOG_INFO_1,"Number of packets received = %d\n",num_packets_received);
+    LOG(LOG_INFO_1,"Number of packets processed = %d\n",num_packets_processed);
 
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
@@ -288,6 +324,7 @@ int main(int argc, char* argv[]) {
 
     for (int i = 0; i < NUM_PACKETS; i++) {
         free(input[i]);
+        free(packet_ring_buffer[i]);
     }
 	
     free(file);

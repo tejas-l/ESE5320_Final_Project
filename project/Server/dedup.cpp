@@ -12,7 +12,6 @@ uint32_t dedup(chunk_t *chunk)
     auto find_SHA = SHA_map.find(chunk->SHA_signature);
     if(find_SHA == SHA_map.end()){
         // add new chunk to the map and return 0
-        //chunk->SHA_signature = SHA_result;
         chunk->number = num_unique_chunk;
         SHA_map[chunk->SHA_signature] = chunk->number;
         
@@ -24,10 +23,11 @@ uint32_t dedup(chunk_t *chunk)
     }
 }
 
-void dedup_packet_level(packet_t *new_packet, sem_t *sem_sha_dedup, sem_t *sem_dedup_lzw, int *sem_done)
+void dedup_packet_level(packet_t **packet_ring_buf, sem_t *sem_sha_dedup, sem_t *sem_dedup_lzw, int *sem_done)
 {
     static std::unordered_map<std::string, uint32_t> SHA_map;
     static uint32_t num_unique_chunk = 0;
+    static int packet_num = 0;
 
     while(1){
         // wait for semaphore
@@ -38,14 +38,19 @@ void dedup_packet_level(packet_t *new_packet, sem_t *sem_sha_dedup, sem_t *sem_d
             return;
         }
 
-        LOG(LOG_INFO_1, "semaphore received, starting dedup\n");
+        packet_t *new_packet = packet_ring_buf[packet_num];
+        packet_num++;
+        if(packet_num == NUM_PACKETS){
+            packet_num = 0; // ring buffer calculations
+        }
+
+        LOG(LOG_INFO_1, "semaphore received, starting dedup, packet number: %d\n",packet_num);
 
         chunk_t * const chunkList = new_packet->chunk_list;
         const uint64_t num_chunks_dedup = new_packet->num_chunks;
 
         for(uint64_t i = 0; i < num_chunks_dedup; i++){
 
-            //auto find_SHA = SHA_map.find(chunkList[i].SHA_signature);
             if(SHA_map.find(chunkList[i].SHA_signature) == SHA_map.end()){
                 // add new chunk to the map and return 0
                 chunkList[i].number = num_unique_chunk;
@@ -58,7 +63,6 @@ void dedup_packet_level(packet_t *new_packet, sem_t *sem_sha_dedup, sem_t *sem_d
                 chunkList[i].is_duplicate = 1;
                 chunkList[i].number = SHA_map[chunkList[i].SHA_signature];
             }
-
         }
 
         // release semaphore

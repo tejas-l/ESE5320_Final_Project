@@ -59,9 +59,10 @@ void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 }
 
 //For rolling hash 
-void CDC_packet_level(packet_t * const new_packet, sem_t * const sem_cdc, sem_t * const sem_cdc_sha, int *sem_done)
+void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t * const sem_cdc_sha, int *sem_done)
 {
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
+    static int packet_num = 0;
 
     while (1){
         // wait for semaphore to be released
@@ -71,8 +72,14 @@ void CDC_packet_level(packet_t * const new_packet, sem_t * const sem_cdc, sem_t 
             sem_post(sem_cdc_sha);
             return;
         }
+
+        packet_t *new_packet = packet_ring_buf[packet_num];
+        packet_num++;
+        if(packet_num == NUM_PACKETS){
+            packet_num = 0; // ring buffer calculations
+        }
         
-        LOG(LOG_INFO_1, "semaphore received, starting cdc\n");
+        LOG(LOG_INFO_1, "semaphore received, starting cdc, packet number: %d\n",packet_num);
 
         LOG(LOG_DEBUG, "new_packet_ptr = %p, sem_cdc = %p, sem_sha = %p\n",new_packet,sem_cdc,sem_cdc_sha);
 

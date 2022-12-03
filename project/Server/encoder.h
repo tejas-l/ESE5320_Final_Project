@@ -6,7 +6,6 @@
 #include "cdc.h"
 #include "SHA256_NEON.h"
 #include "dedup.h"
-#include "threading.h"
 
 #include "../common/common.h"
 #include "Utilities.h"
