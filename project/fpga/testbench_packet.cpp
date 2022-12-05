@@ -1,5 +1,9 @@
 #include <bits/stdc++.h>
 #include "LZW_HW_packet.h"
+#include <fstream>
+#include <iostream>
+#include <stdlib.h>
+#include <strings.h>
 
 #define OUT_SIZE_BITS 8
 #define MIN(A,B) ( (A)<(B) ? (A) : (B) );
@@ -7,7 +11,7 @@
 
 using namespace std;
 
-vector<unsigned char> LZW_SW(string s1, unsigned char* is_dups, uint8_t num_chunks,
+vector<unsigned char> LZW_SW(unsigned char* s1, unsigned char* is_dups, uint8_t num_chunks,
                             unsigned int* chunk_lengths, unsigned int* chunk_numbers){
 
     
@@ -211,55 +215,132 @@ bool compare_outputs(vector<unsigned char> sw_output_code, unsigned char *hw_out
     return Equal;
 }
 
-int main()
-{
-    string test_string = "the Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
-    //string test_string = "gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGG";
-    std::vector<std::string> strings(5);
+// int main()
+// {
+//     string test_string = "the Little Prince Chapter I Once when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+//     //string test_string = "gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGabc gdgserge yy66ey   &&**Ggg *GGGGGGGGGGGGGGG";
+//     // FILE *fp = fopen("Franklin.txt","r");
+//     //filestream new_file;
+//     // new_file.open("Franklin.txt",ios::in);
+//     // if(!new_file){
+//     //     printf("File not read!!\n");
+//     // }else{
+//     //     char ch ;
+//     //     while(!new_file.eof())
+//     // }
 
-    // strings[0] = "the Little Prince Chapter I Once when I was six ye";
-    // strings[1] = "ars old I saw a magnificent picture in a book, called True Stor";
-    // strings[2] = "ies from Nature, about the primeval fore";
-    // strings[3] = "st. It was a picture of a boa constrictor in the act of swallowing an ani";
-    // strings[5] = "mal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+//     //unsigned char *test =  (unsigned char*)calloc(8192,sizeof(unsigned char));
+//     // unsigned char test[8192] = {0};
 
-    uint64_t num_chunks = 5;
-    unsigned int chunk_lengths[] = {50, 63, 40, 73, 73};
-    unsigned int chunk_numbers[] = {0, 1, 0, 2, 1};
-    unsigned char is_dups[] = {0, 0, 1, 0, 1};
+//     // if(fread(test,sizeof(char), 8192, fp)==NULL){
+//     //     printf("reading error");
+//     // }
 
+//     // fread(test,sizeof(char), 8192, fp);
+//     // fclose(fp);
+//     // for (int i=0; i<8192; i++){
+//     //     printf("index %d -> char %c\n",i,test[i]);
+//     // }
 
-    unsigned char* string_s = (uint8_t*)calloc(500,sizeof(uint8_t));
-    unsigned char* hw_output_code = (unsigned char*)calloc(8192, sizeof(unsigned char));
-    printf("Input length %d\n",test_string.size());
+//     uint64_t num_chunks = 5;
+//     unsigned int chunk_lengths[] = {50, 63, 40, 73, 73};
+//     unsigned int chunk_numbers[] = {0, 1, 2, 3, 4};
+//     unsigned char is_dups[] = {0, 0, 0, 0, 0};
 
-    for(int i = 0; i < test_string.size(); i++)
-    {
-        string_s[i] = test_string[i];
-    }
-
-    uint32_t* output_code_size = (uint32_t*)calloc(1,sizeof(uint32_t));
-    LZW_encoding_HW(string_s, chunk_lengths, chunk_numbers, is_dups, num_chunks, hw_output_code, output_code_size);
+    // uint64_t num_chunks_1 = 26;
+    // unsigned int chunk_lengths_1[] = {266,218,997,107,48,738,158,27,263,909,495,710,50,250,183,82,140,864,436,70,241,61,240,88,528,23};
+    // unsigned int chunk_numbers_1[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25};
+    // unsigned char is_dups_1[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0 ,0 ,0 ,0 , 0};
     
-    std::vector<unsigned char> sw_out;
-    std::vector<unsigned char> sw_int;
-    std::vector<unsigned int> sw_output_code;
+//     uint64_t num_chunks_2 = 27;
+//     unsigned int chunk_lengths_2[] = {507, 123, 313, 33, 500, 538,433, 881, 296, 73, 289, 350, 337, 739, 42, 200, 99, 200, 68, 159, 47, 248, 28, 946, 409, 166, 168};
+//     unsigned int chunk_numbers_2[] = {26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,48, 49, 50, 51, 52};
+//     unsigned char is_dups_2[] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 ,0 ,0 ,0 ,0 , 0, 0};
 
-    // for(int i =0; i< num_chunks; i++){
-      
-    //     printf("SW Processing start for string %d\n",i);
-    //     sw_output_code = LZW_SW(string_s[i]);
-    //     sw_int = compress(sw_output_code);
-    //     sw_out.insert(sw_out.end(), sw_int.begin(), sw_int.end());
-    //     printf("String %d done processing for SW \n",i);
-    // }
-    sw_out = LZW_SW(test_string, is_dups, num_chunks, chunk_lengths, chunk_numbers);
-    printf("HW out length %d\n",*output_code_size);
-    printf("SW out length %d\n", sw_out.size());
+//     //unsigned char* string_s = (uint8_t*)calloc(500,sizeof(uint8_t));
+//     unsigned char* hw_output_code_1 = (unsigned char*)calloc(2000, sizeof(unsigned char));
+//     //unsigned char* hw_output_code_2 = (unsigned char*)calloc(20000, sizeof(unsigned char));
+//     // unsigned char hw_output_code_1[16000] = {0};
+//     //unsigned char hw_output_code_2[16000] = {0};
+//     //printf("Input length %d\n",test_string.size());
+//     string string_s_1;
+//     // string string_s_2;
+//     for(int i = 0; i < 8192; i++)
+//     {
+//         string_s_1 +=  [i];
+//         // string_s_2 += test[8192 + i];
+//     }
 
-    bool Equal = compare_outputs(sw_out, hw_output_code, *output_code_size );
-    free(string_s);
-    free(hw_output_code);
-    free(output_code_size);
+
+//     uint32_t* output_code_size_1 = (uint32_t*)calloc(1,sizeof(uint32_t));
+//     //uint32_t* output_code_size_2 = (uint32_t*)calloc(1,sizeof(uint32_t));
+    
+//     LZW_encoding_HW(test, chunk_lengths_1, chunk_numbers_1, is_dups_1, num_chunks_1, hw_output_code_1, output_code_size_1);
+    
+
+    
+
+//     // uint32_t output_code_size_1 = 0;
+//     // uint32_t output_code_size_2 = 0;
+//     std::vector<unsigned char> sw_out_1;
+//     //std::vector<unsigned char> sw_out_2;
+//     //sw_out_1 = LZW_SW(string_s_1, is_dups_1, num_chunks_1, chunk_lengths_1, chunk_numbers_1);
+//     //sw_out_2 = LZW_SW(string_s_2, is_dups_2, num_chunks_2, chunk_lengths_2, chunk_numbers_2);
+
+//     printf("software lzw done\n");
+
+//     printf("Second run of HW\n");
+//     //LZW_encoding_HW((unsigned char*)&test[8192], chunk_lengths_2, chunk_numbers_2, is_dups_2, num_chunks_2, hw_output_code_2, output_code_size_2);
+
+    
+//     // LZW_encoding_HW(test, chunk_lengths_1, chunk_numbers_1, is_dups_1, num_chunks_1, hw_output_code_1, output_code_size_1);
+    
+
+//     printf("Running check for 1st chunk\n");
+//     printf("Running check for 2nd chunk\n");
+//     //bool Equal = compare_outputs(sw_out_1, hw_output_code_1, *output_code_size_1 );
+//     // if(Equal){
+//     //     printf("packet 1 passed\n");
+//     // }else{
+//     //     printf("packet 1 passed\n");
+//     // }
+//     // printf("Running check for 2nd chunk\n");
+//     //Equal = compare_outputs(sw_out_2, hw_output_code_2, *output_code_size_2 );
+//     // free(test);
+//     free(hw_output_code_1);
+//     free(output_code_size_1);
+//     // free(hw_output_code_2);
+//     // free(output_code_size_2);
+    
+//     //std::cout << "TEST " << (Equal ? "PASSED" : "FAILED") << std::endl;
+// }
+
+
+int main(){
+
+    unsigned char test[] = "abc tors swallow their prey whole, without chewing it. After that they are not able to move, and they sleep through the six months that they need for digestion. I pondered deeply, then, over the adventures of the jungle. And after some work with a colored pencil I succeeded in making my first drawing. My Drawing Number One. The Little Prince Chapter I\nOnce when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+    
+    uint64_t num_chunks_1 = 4;
+    unsigned int chunk_lengths_1[] = {51, 150, 271, 154};
+    unsigned int chunk_numbers_1[] = {20, 5, 18, 40};
+    unsigned char is_dups_1[] = {0, 0, 1, 0};
+
+    std::vector<unsigned char> sw_out_1;
+    
+    unsigned char* hw_output_code_1 = (unsigned char*)calloc(1000, sizeof(unsigned char));
+
+    uint32_t* output_code_size_1 = (uint32_t*)calloc(1,sizeof(uint32_t));
+
+    LZW_encoding_HW(test, chunk_lengths_1, chunk_numbers_1, is_dups_1, num_chunks_1, hw_output_code_1, output_code_size_1);
+
+
+    sw_out_1 = LZW_SW(test, is_dups_1, num_chunks_1, chunk_lengths_1, chunk_numbers_1);
+
+
+    bool Equal = compare_outputs(sw_out_1, hw_output_code_1, *output_code_size_1 );
     std::cout << "TEST " << (Equal ? "PASSED" : "FAILED") << std::endl;
+
+    free(hw_output_code_1);
+    free(output_code_size_1);
+
 }
