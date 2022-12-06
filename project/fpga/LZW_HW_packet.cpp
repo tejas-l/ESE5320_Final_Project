@@ -69,19 +69,19 @@ uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
 }
 
 
-int Murmur_find(uint64_t hash_result,int code, uint64_t* table){
+// int Murmur_find(uint64_t hash_result,int code, uint64_t* table){
 
-    for (int i = 0 ; i< code; i++){
-        if (hash_result == table[i]){
-            return i;
-        }
+//     for (int i = 0 ; i< code; i++){
+//         if (hash_result == table[i]){
+//             return i;
+//         }
 
-    }
-    return -1;
-}
+//     }
+//     return -1;
+// }
 
 int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint64_t hash_result){
-
+#pragma HLS INLINE
     uint64_t hash = hash_result % HASH_MOD;
     for(int col = 0; col < BUCKET_SIZE; col++){
         if(hash_node_ptr[hash][col].hash_value == 0){
@@ -90,13 +90,11 @@ int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint64_t hash_re
             return 1;
         }
     }
-    // printf("This hash collided Hash value = %ld hash0fhash = %ld \n",hash_result, hash);
-    std::cout << "This hash collided Hash value = "<< hash_result << " hashofhash = "<< hash << std::endl;
     return -1;
 }
 
 int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint64_t hash_result){
-
+#pragma HLS INLINE
     uint64_t hash = hash_result % HASH_MOD;
     for(int col = 0; col < BUCKET_SIZE; col++){
         if(hash_node_ptr[hash][col].hash_value == hash_result){
@@ -152,6 +150,7 @@ void read  (unsigned char* data_in,
         {
             for (unsigned int j = 0; j < chunk_length_read; j++)
             {
+                #pragma HLS PIPELINE
                 uint8_t temp_data = data_in[running_length + j + 2];
                 in_stream.write(temp_data);  
             }
@@ -178,7 +177,6 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
     for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
     {
-        printf("For chunk number %d\n",chunks);
         chunk_length_lzw = chunk_lengths_read.read();
         chunk_isdup_lzw = chunk_isdups_read.read();
         chunk_number_lzw = chunk_numbers_read.read();
@@ -192,8 +190,6 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
             for(int i = 0; i < ARR_SIZE; i++){
                 for(int j = 0; j < BUCKET_SIZE; j++){
-                    #pragma HLS UNROLL
-                    hash_node_ptr[i][j].code = 0;
                     hash_node_ptr[i][j].hash_value = 0;         
                 }
             }
@@ -239,12 +235,6 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
                     lzw_out_stream.write(value); /*function that returns index*/
  
                     int retval = Insert(hash_node_ptr, code, hash_result); // Stores hash for p+c
-                    if(retval == -1){
-                        for(int s = 0; s< substring_arr_index; s++){
-                            printf("%c", substring_array[s]);
-                        }
-                        printf("EOS\n");
-                    }
                     code++;
                     substring_arr_index = 0;
                     substring_array[substring_arr_index] = c;
@@ -371,6 +361,7 @@ void write (hls::stream<unsigned char> &out_stream,
 
             while(!comp_sync)
             {
+                #pragma HLS PIPELINE
                 output[out_index] = out_stream.read();
                 out_index++;
                 unique_length++;
@@ -423,11 +414,11 @@ uint64_t num_chunks_local = num_chunks;
 
     #pragma HLS DATAFLOW
 
-    hls::stream<unsigned char, 10*1024> out_stream("out_stream");
-    hls::stream<int, 10*1024> lzw_out_stream("lzw_out_stream");
-    hls::stream<unsigned char, 10*1024> in_stream("in_stream");
-    hls::stream<unsigned char, 10*1024> compress_sync("compress_sync");
-    hls::stream<unsigned char, 10*1024> lzw_sync("lzw_sync");
+    hls::stream<unsigned char, 8*1024> out_stream("out_stream");
+    hls::stream<int, 8*1024> lzw_out_stream("lzw_out_stream");
+    hls::stream<unsigned char, 8*1024> in_stream("in_stream");
+    hls::stream<unsigned char, 512> compress_sync("compress_sync");
+    hls::stream<unsigned char, 512> lzw_sync("lzw_sync");
     hls::stream<unsigned int, 512> chunk_numbers_read("chunk_numbers_read");
     hls::stream<unsigned int, 512> chunk_numbers_lzw("chunk_numbers_lzw");
     hls::stream<unsigned int, 512> chunk_numbers_comp("chunk_numbers_comp");
