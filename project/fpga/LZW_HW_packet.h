@@ -10,7 +10,7 @@
 #include <cstdlib>
 #include <math.h>
 #include <hls_stream.h>
-
+#include <ap_int.h>
 
 void LZW_encoding_HW(unsigned char* data_in, unsigned int* chunk_lengths, unsigned int* chunk_numbers,
                      unsigned char* chunk_isdups, uint64_t num_chunks,

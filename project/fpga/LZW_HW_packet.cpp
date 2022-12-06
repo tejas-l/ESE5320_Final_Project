@@ -10,6 +10,17 @@
 #define MIN_CHUNK_SIZE (16)
 #define MAX_PACKET_SIZE 8*1024
 #define MAX_NUM_CHUNKS (MAX_PACKET_SIZE/MIN_CHUNK_SIZE)
+#define BUCKET_SIZE 3   
+
+
+#define HASH_TABLE_SIZE 8192
+#define HASH_MOD HASH_TABLE_SIZE
+
+typedef struct hash_node{   
+    int code;
+    uint64_t hash_value;
+}hash_node_t;
+
 
 
 uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
@@ -69,6 +80,50 @@ int Murmur_find(uint64_t hash_result,int code, uint64_t* table){
     return -1;
 }
 
+int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint64_t hash_result){
+
+    uint64_t hash = hash_result % HASH_MOD;
+    for(int col = 0; col < BUCKET_SIZE; col++){
+        if(hash_node_ptr[hash][col].hash_value == 0){
+            hash_node_ptr[hash][col].hash_value = hash_result;
+            hash_node_ptr[hash][col].code = code;
+            return 1;
+        }
+    }
+    // printf("This hash collided Hash value = %ld hash0fhash = %ld \n",hash_result, hash);
+    std::cout << "This hash collided Hash value = "<< hash_result << " hashofhash = "<< hash << std::endl;
+    return -1;
+}
+
+int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint64_t hash_result){
+
+    uint64_t hash = hash_result % HASH_MOD;
+    for(int col = 0; col < BUCKET_SIZE; col++){
+        if(hash_node_ptr[hash][col].hash_value == hash_result){
+            return hash_node_ptr[hash][col].code;
+        }
+    }
+    return -1;
+}
+
+
+// void associative_store(uint64_t hash_value, int code)
+// {
+//     ap_uint<142> key_p1[512]; 
+//     ap_uint<142> key_p2[512]; 
+//     ap_uint<142> key_p3[512]; 
+//     ap_uint<142> key_p4[512]; 
+//     ap_uint<142> key_p5[512]; 
+//     ap_uint<142> key_p6[512]; 
+//     ap_uint<142> key_p7[512]; 
+//     ap_uint<142> key_p8[512]; 
+        
+//     uint16_t hash_val = hash_value >> 
+    
+
+
+// }
+
 void read  (unsigned char* data_in,
             hls::stream<unsigned char> &in_stream,
             hls::stream<unsigned int> &chunk_numbers_read,
@@ -123,6 +178,7 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
     for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
     {
+        printf("For chunk number %d\n",chunks);
         chunk_length_lzw = chunk_lengths_read.read();
         chunk_isdup_lzw = chunk_isdups_read.read();
         chunk_number_lzw = chunk_numbers_read.read();
@@ -132,22 +188,30 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
         
         if(!chunk_isdup_lzw)
         {
-            uint64_t table[ARR_SIZE] = {0};
+            hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
+
+            for(int i = 0; i < ARR_SIZE; i++){
+                for(int j = 0; j < BUCKET_SIZE; j++){
+                    #pragma HLS UNROLL
+                    hash_node_ptr[i][j].code = 0;
+                    hash_node_ptr[i][j].hash_value = 0;         
+                }
+            }
             unsigned char substring_array[ARR_SIZE] = {0};
             unsigned int  substring_arr_index = 0;
 
-            for (unsigned int i = 0; i <= 255; i++)
-            {
-                unsigned char ch = char(i);
-                table[i] = MurmurHash2((void*)&ch,1,1); // Initialize Table 
-            }
+            // for (unsigned int i = 0; i <= 255; i++)
+            // {
+            //     unsigned char ch = char(i);
+            //     Insert(hash_node_ptr, i, MurmurHash2((void*)&ch,1,1));
+            // }
 
             unsigned char c;
             substring_array[substring_arr_index] = in_stream.read(); // p += chunk->start[0] // Read the first element
             substring_arr_index++;
 
             int code = 256;
-
+            int write_flag = 0;
             for (unsigned int i = 0; i < chunk_length_lzw; i++)
             {
                 if (i != chunk_length_lzw - 1){
@@ -156,17 +220,31 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
                     substring_arr_index++;
                 }
 
-                uint64_t hash_result =  MurmurHash2((void*)substring_array,substring_arr_index,1);
+                uint64_t hash_result = MurmurHash2((void*)substring_array,substring_arr_index,1);
 
                 //MurmurHash
-                int res = Murmur_find(hash_result,code,table);
+                int res = Find(hash_node_ptr, hash_result);
+                write_flag = 1;
+
                 if ( res < 0 )
-                {
-                    int value = Murmur_find( MurmurHash2((void*)substring_array,substring_arr_index-1,1),code,table) ;
+                {   
+                    int value = 0;
+                    if(substring_arr_index <= 2){
+                        value = (int)substring_array[0];
+                        write_flag = 0;
+                    }else{
+                        value = Find(hash_node_ptr, MurmurHash2((void*)substring_array,substring_arr_index-1,1));
+                    }
                     lzw_sync.write(0);
                     lzw_out_stream.write(value); /*function that returns index*/
-
-                    table[code] = hash_result;  // Stores hash for p+c
+ 
+                    int retval = Insert(hash_node_ptr, code, hash_result); // Stores hash for p+c
+                    if(retval == -1){
+                        for(int s = 0; s< substring_arr_index; s++){
+                            printf("%c", substring_array[s]);
+                        }
+                        printf("EOS\n");
+                    }
                     code++;
                     substring_arr_index = 0;
                     substring_array[substring_arr_index] = c;
@@ -175,12 +253,17 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
             }
 
-            int value1 = Murmur_find( MurmurHash2(substring_array,substring_arr_index,1),code,table);  /*function that returns index*/
-            lzw_sync.write(0);
-            lzw_out_stream.write(value1);
+            // int value1 = Murmur_find( MurmurHash2(substring_array,substring_arr_index,1),code,table);  /*function that returns index*/
+            if(write_flag){
+                int value1 = Find(hash_node_ptr, MurmurHash2(substring_array,substring_arr_index,1));
+                lzw_sync.write(0);
+                lzw_out_stream.write(value1);
+            }
+
 
             lzw_sync.write(1);
         }
+
     }
 }
 
