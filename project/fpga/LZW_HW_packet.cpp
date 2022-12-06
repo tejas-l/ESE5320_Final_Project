@@ -97,7 +97,7 @@ void read  (unsigned char* data_in,
         {
             for (unsigned int j = 0; j < chunk_length_read; j++)
             {
-                uint8_t temp_data = data_in[running_length + j];
+                uint8_t temp_data = data_in[running_length + j + 2];
                 in_stream.write(temp_data);  
             }
         }

@@ -318,7 +318,7 @@ bool compare_outputs(vector<unsigned char> sw_output_code, unsigned char *hw_out
 
 int main(){
 
-    unsigned char test[] = "abc tors swallow their prey whole, without chewing it. After that they are not able to move, and they sleep through the six months that they need for digestion. I pondered deeply, then, over the adventures of the jungle. And after some work with a colored pencil I succeeded in making my first drawing. My Drawing Number One. The Little Prince Chapter I\nOnce when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
+    unsigned char test[] = "kkabc tors swallow their prey whole, without chewing it. After that they are not able to move, and they sleep through the six months that they need for digestion. I pondered deeply, then, over the adventures of the jungle. And after some work with a colored pencil I succeeded in making my first drawing. My Drawing Number One. The Little Prince Chapter I\nOnce when I was six years old I saw a magnificent picture in a book, called True Stories from Nature, about the primeval forest. It was a picture of a boa constrictor in the act of swallowing an animal. Here is a copy of the drawing. Boa In the book it said: Boa constric";
     
     uint64_t num_chunks_1 = 4;
     unsigned int chunk_lengths_1[] = {51, 150, 271, 154};
@@ -334,7 +334,7 @@ int main(){
     LZW_encoding_HW(test, chunk_lengths_1, chunk_numbers_1, is_dups_1, num_chunks_1, hw_output_code_1, output_code_size_1);
 
 
-    sw_out_1 = LZW_SW(test, is_dups_1, num_chunks_1, chunk_lengths_1, chunk_numbers_1);
+    sw_out_1 = LZW_SW(&test[2], is_dups_1, num_chunks_1, chunk_lengths_1, chunk_numbers_1);
 
 
     bool Equal = compare_outputs(sw_out_1, hw_output_code_1, *output_code_size_1 );
