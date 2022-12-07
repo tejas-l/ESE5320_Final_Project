@@ -10,7 +10,7 @@
 #define MIN_CHUNK_SIZE (16)
 #define MAX_PACKET_SIZE 8*1024
 #define MAX_NUM_CHUNKS (MAX_PACKET_SIZE/MIN_CHUNK_SIZE)
-#define BUCKET_SIZE 3   
+#define BUCKET_SIZE 3
 
 
 #define HASH_TABLE_SIZE 8192
@@ -90,6 +90,7 @@ int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint64_t hash_re
             return 1;
         }
     }
+    printf("Collision detected\n");
     return -1;
 }
 
@@ -105,22 +106,78 @@ int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint64_t hash_result){
 }
 
 
-// void associative_store(uint64_t hash_value, int code)
-// {
-//     ap_uint<142> key_p1[512]; 
-//     ap_uint<142> key_p2[512]; 
-//     ap_uint<142> key_p3[512]; 
-//     ap_uint<142> key_p4[512]; 
-//     ap_uint<142> key_p5[512]; 
-//     ap_uint<142> key_p6[512]; 
-//     ap_uint<142> key_p7[512]; 
-//     ap_uint<142> key_p8[512]; 
-        
-//     uint16_t hash_val = hash_value >> 
+uint8_t associative_insert(ap_uint<72> key[][8], int* value, uint8_t counter, uint64_t hash_value, int code)
+{
+    ap_uint<9> index[8] ;
+    for(int i = 0; i< 8; i++){
+        index[i] = 0;
+    } 
+    value[counter] = code;
+
+    for (int i = 0; i < 8 ; i++)
+    {
+        #pragma HLS UNROLL 
+        index[i] = (hash_value >> (9*i)) & (0x1FF);    
+    }
+
+    ap_uint<72> one_hot = 0 ; 
+    one_hot =  1 << counter;
+
+    for (int i = 0; i < 8 ; i++){
+    #pragma HLS UNROLL 
+
+        key[index[i]][i] |= one_hot; 
+
+    }
+
+    counter ++; 
+    return counter; 
+
+}
+
+int reverse_one_hot(ap_uint<72> address){
+    for(int i = 0; i<72; i++){
+        if(address >> i == 1){
+            return i;
+        }
+    }
+    return -1;
+}
+
+int associative_find(ap_uint<72>key[][8], int* value, uint64_t hash_value)
+{
+    ap_uint<9> index[8]; 
+    for(int i = 0; i< 8; i++){
+        index[i] = 0;
+    } 
+    for (int i = 0; i < 8 ; i++)
+    {
+        #pragma HLS UNROLL 
+        index[i] = (hash_value >> (9*i)) & (0x1FF);    
+    }
+
+    ap_uint<72> address = key[index[0]][0] & key[index[1]][1]; 
+    for (int i =2;  i < 8; i++ )
+    {
+        #pragma HLS UNROLL
+        address &=  key[index[i]][i];
+    }
+
+    if(address == 0){
+        return -1;
+    }
+
+    int address_value = reverse_one_hot(address); 
+    int code = value[address_value]; 
+    if(code == 0 )
+    {
+        code = -1; 
+    }
     
 
+    return code;
 
-// }
+}
 
 void read  (unsigned char* data_in,
             hls::stream<unsigned char> &in_stream,
@@ -187,6 +244,17 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
         if(!chunk_isdup_lzw)
         {
             hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
+            ap_uint<72> key[512][8]; 
+            int value[72];
+            uint8_t counter = 0;
+            for(int i = 0; i<512; i++){
+                for(int j = 0; j < 8; j++){
+                    key[i][j] = 0;
+                }
+            }
+            for(int i = 0; i < 72; i++){
+                value[i] = 0;
+            }
 
             for(int i = 0; i < ARR_SIZE; i++){
                 for(int j = 0; j < BUCKET_SIZE; j++){
@@ -195,12 +263,6 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
             }
             unsigned char substring_array[ARR_SIZE] = {0};
             unsigned int  substring_arr_index = 0;
-
-            // for (unsigned int i = 0; i <= 255; i++)
-            // {
-            //     unsigned char ch = char(i);
-            //     Insert(hash_node_ptr, i, MurmurHash2((void*)&ch,1,1));
-            // }
 
             unsigned char c;
             substring_array[substring_arr_index] = in_stream.read(); // p += chunk->start[0] // Read the first element
@@ -220,21 +282,36 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
                 //MurmurHash
                 int res = Find(hash_node_ptr, hash_result);
+                if(res < 0 ){
+                    res = associative_find(key, value, hash_result);
+                }
+                
                 write_flag = 1;
 
                 if ( res < 0 )
                 {   
-                    int value = 0;
+                    uint64_t hash_result1 = 0;
+                    int lookup_value = 0;
                     if(substring_arr_index <= 2){
-                        value = (int)substring_array[0];
+                        lookup_value = (int)substring_array[0];
                         write_flag = 0;
                     }else{
-                        value = Find(hash_node_ptr, MurmurHash2((void*)substring_array,substring_arr_index-1,1));
+                        hash_result1 = MurmurHash2((void*)substring_array,substring_arr_index-1,1);
+                        lookup_value = Find(hash_node_ptr, hash_result1);
+                        if(lookup_value < 0){
+                            lookup_value = associative_find(key, value, hash_result1);
+                        }
                     }
                     lzw_sync.write(0);
-                    lzw_out_stream.write(value); /*function that returns index*/
+                    lzw_out_stream.write(lookup_value); /*function that returns index*/
  
-                    int retval = Insert(hash_node_ptr, code, hash_result); // Stores hash for p+c
+                    int insert_result = Insert(hash_node_ptr, code, hash_result); // Stores hash for p+c
+                    if ((insert_result < 0) && counter < 72){
+                        counter = associative_insert(key, value, counter, hash_result, code);
+                    }else if (counter == 72){
+                        printf("Associative memory insert not going to happen\n");
+                    }
+
                     code++;
                     substring_arr_index = 0;
                     substring_array[substring_arr_index] = c;
@@ -243,11 +320,14 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
             }
 
-            // int value1 = Murmur_find( MurmurHash2(substring_array,substring_arr_index,1),code,table);  /*function that returns index*/
             if(write_flag){
-                int value1 = Find(hash_node_ptr, MurmurHash2(substring_array,substring_arr_index,1));
+                uint64_t hash_result2 = MurmurHash2((void*)substring_array,substring_arr_index,1);
+                int lookup_value1 = Find(hash_node_ptr, hash_result2);
+                if(lookup_value1 < 0){ 
+                    lookup_value1 = associative_find(key, value, hash_result2);
+                }
                 lzw_sync.write(0);
-                lzw_out_stream.write(value1);
+                lzw_out_stream.write(lookup_value1);
             }
 
 
@@ -414,9 +494,9 @@ uint64_t num_chunks_local = num_chunks;
 
     #pragma HLS DATAFLOW
 
-    hls::stream<unsigned char, 8*1024> out_stream("out_stream");
-    hls::stream<int, 8*1024> lzw_out_stream("lzw_out_stream");
-    hls::stream<unsigned char, 8*1024> in_stream("in_stream");
+    hls::stream<unsigned char, 4*1024> out_stream("out_stream");
+    hls::stream<int, 4*1024> lzw_out_stream("lzw_out_stream");
+    hls::stream<unsigned char, 4*1024> in_stream("in_stream");
     hls::stream<unsigned char, 512> compress_sync("compress_sync");
     hls::stream<unsigned char, 512> lzw_sync("lzw_sync");
     hls::stream<unsigned int, 512> chunk_numbers_read("chunk_numbers_read");
