@@ -23,29 +23,47 @@ LZW_kernel_call::LZW_kernel_call(cl::Context &context_1,
 
 };
 
-void LZW_kernel_call::LZW_kernel_run(unsigned int HW_LZW_IN_LEN,
-                    size_t in_buf_size,
-                    unsigned char* to_fpga,
-                    size_t out_buf_size,
-                    unsigned char* from_fpga,
-                    size_t out_len_size,
-                    unsigned int* LZW_HW_output_length_ptr){
+void LZW_kernel_call::LZW_kernel_run(size_t in_buf_size,
+                        unsigned char* to_fpga,
+
+                        size_t out_buf_size,
+                        unsigned char* from_fpga,
+
+                        size_t chunk_lengths_size,
+                        unsigned int* chunk_lengths,
+
+                        size_t chunk_numbers_size,
+                        unsigned int* chunk_numbers,
+                        
+                        size_t chunk_isdups_size,
+                        unsigned char* chunk_isdups,
+
+                        size_t out_len_size,
+                        unsigned int* LZW_HW_output_length_ptr,
+                        
+                        uint64_t num_chunks){
     cl_int err;
     OCL_CHECK(err, in_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, in_buf_size, to_fpga, &err ));
     OCL_CHECK(err, out_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_buf_size, from_fpga, &err ));
     OCL_CHECK(err, out_len = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_len_size, LZW_HW_output_length_ptr, &err ));
+    OCL_CHECK(err,  chunk_lengths_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, chunk_lengths_size, chunk_lengths, &err ));
+    OCL_CHECK(err,  chunk_numbers_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, chunk_numbers_size, chunk_numbers, &err ));
+    OCL_CHECK(err,  chunk_isdups_buf = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, chunk_isdups_size, chunk_isdups, &err ));
     
     std::vector<cl::Event> write_events_vec;
     std::vector<cl::Event> execute_events_vec, read_events_vec;
     cl::Event write_event, execute_event, read_event;
 
     OCL_CHECK(err, err = kernel.setArg(0, in_buf));
-    OCL_CHECK(err, err = kernel.setArg(1, HW_LZW_IN_LEN));
-    OCL_CHECK(err, err = kernel.setArg(2, out_buf));
-    OCL_CHECK(err, err = kernel.setArg(3, out_len));
+    OCL_CHECK(err, err = kernel.setArg(1, chunk_lengths_buf));
+    OCL_CHECK(err, err = kernel.setArg(2, chunk_numbers_buf));
+    OCL_CHECK(err, err = kernel.setArg(3, chunk_isdups_buf));
+    OCL_CHECK(err, err = kernel.setArg(4, num_chunks));
+    OCL_CHECK(err, err = kernel.setArg(5, out_buf));
+    OCL_CHECK(err, err = kernel.setArg(6, out_len));   
 
 
-    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({in_buf}, 0 /* 0 means from host*/, &read_events_vec, &write_event));
+    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({in_buf, chunk_lengths_buf, chunk_numbers_buf, chunk_isdups_buf}, 0 /* 0 means from host*/, &read_events_vec, &write_event));
     
     write_events_vec.push_back(write_event);
 
@@ -178,14 +196,37 @@ uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *
 {
     static int packet_num = 0;
 
+    unsigned int *chunk_lengths;
+    posix_memalign((void**)&chunk_lengths, 4*4096,MAX_NUM_CHUNKS*sizeof(unsigned int));
+    unsigned int *chunk_numbers;
+    posix_memalign((void**)&chunk_numbers, 4*4096,MAX_NUM_CHUNKS*sizeof(unsigned int));
+    unsigned char *chunk_isdups;
+    posix_memalign((void**)&chunk_isdups, 4*4096,MAX_NUM_CHUNKS*sizeof(unsigned char));
+
+    unsigned int* LZW_HW_output_length_ptr = (unsigned int*)calloc(1,sizeof(unsigned int));
+
+    stopwatch lzw_time;
+    stopwatch lzw_wait_time;
+
     while(1){
         // wait for semaphore released by dedup
+        lzw_wait_time.start();
         sem_wait(sem_dedup_lzw);
+        lzw_wait_time.stop();
 
         if(*sem_done == 1){
+            free(LZW_HW_output_length_ptr);
+            free(chunk_lengths);
+            free(chunk_numbers);
+            free(chunk_isdups);
+            
             sem_post(sem_lzw);
+
+            std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << " Total time = " << lzw_time.latency() << "ms" << std::endl;
+            std::cout << "lzw wait time = " << lzw_wait_time.avg_latency() << "ms" << " Total wait time = " << lzw_wait_time.latency() << "ms" << std::endl;
             return offset;
         }
+        lzw_time.start();
 
         packet_t *new_packet = packet_ring_buf[packet_num];
         packet_num++;
@@ -199,34 +240,30 @@ uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *
         uint64_t num_chunks = new_packet->num_chunks;
         LOG(LOG_DEBUG,"PACKET_NUM = %d, LZW NUM CHUNK = %d\n",packet_num,num_chunks);
 
-        for(uint64_t i = 0; i < num_chunks; i++){
-
-            if(chunklist_ptr[i].is_duplicate){
-                LOG(LOG_DEBUG,"PACKET_NUM = %d, i = %d, duplicate chunk = %d\n",packet_num,i,chunklist_ptr[i].number);
-                uint32_t header = 0;
-                header |= (chunklist_ptr[i].number<<1); // 31 bits specify the number of the chunk to be duplicated
-                header |= (0x1); // LSB 1 indicates this is a duplicate chunk
-
-                memcpy(&file[offset], &header, sizeof(header)); // write header to the file
-
-                offset += sizeof(header);
-
-            }else{
-                unsigned int LZW_HW_output_length = 0;
-                size_t in_buf_size = chunklist_ptr[i].length*sizeof(unsigned char);
-                size_t out_buf_size = KERNEL_OUT_SIZE*sizeof(unsigned char);
-                size_t out_len_size = sizeof(unsigned int);
-
-                unsigned int* LZW_HW_output_length_ptr = (unsigned int *)calloc(1,sizeof(unsigned int));
-                unsigned int HW_LZW_IN_LEN = chunklist_ptr[i].length;
-
-                lzw_kernel->LZW_kernel_run(HW_LZW_IN_LEN, in_buf_size, chunklist_ptr[i].start, out_buf_size, &file[offset], out_len_size, LZW_HW_output_length_ptr);
-
-                offset += *LZW_HW_output_length_ptr;
-                free(LZW_HW_output_length_ptr);
-
-            }
+        for(int i = 0; i< num_chunks; i++){
+            chunk_lengths[i] = chunklist_ptr[i].length;
+            chunk_numbers[i] = chunklist_ptr[i].number;
+            chunk_isdups[i] = chunklist_ptr[i].is_duplicate;
         }
+
+        size_t in_buf_size = ((new_packet->length) + 2)*sizeof(unsigned char);
+        size_t out_buf_size = 2*KERNEL_OUT_SIZE*sizeof(unsigned char);
+        size_t out_len_size = sizeof(unsigned int);
+        size_t chunk_lengths_size = num_chunks*sizeof(unsigned int);
+        size_t chunk_numbers_size = num_chunks*sizeof(unsigned int);
+        size_t chunk_isdups_size = num_chunks*sizeof(unsigned char);
+
+        lzw_kernel->LZW_kernel_run(  in_buf_size, (new_packet->buffer - 2), 
+                                    out_buf_size, &file[offset], 
+                                    chunk_lengths_size, chunk_lengths,
+                                    chunk_numbers_size, chunk_numbers,
+                                    chunk_isdups_size, chunk_isdups,
+                                    out_len_size, LZW_HW_output_length_ptr,
+                                    num_chunks);
+
+        offset += *LZW_HW_output_length_ptr;
+
+        lzw_time.stop();
 
         // release semaphore for lzw kernel completion
         sem_post(sem_lzw);

@@ -25,7 +25,7 @@
 
 
 
-#define NUM_PACKETS 32
+#define NUM_PACKETS 64
 #define pipe_depth 4
 #define DONE_BIT_L (1 << 7)
 #define DONE_BIT_H (1 << 15)
@@ -33,6 +33,7 @@
 #define MAX_CHUNK_SIZE 8*1024 // 8KB max chunk size
 #define MIN_CHUNK_SIZE 16 // 16 bytes min chunk size
 #define MAX_PACKET_SIZE 8*1024
+#define MAX_NUM_CHUNKS MAX_PACKET_SIZE/MIN_CHUNK_SIZE
 
 
 //#define TARGET 0x10
