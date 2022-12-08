@@ -36,7 +36,7 @@
 #include <semaphore.h>
 
 
-#define NUM_PACKETS 32
+#define NUM_PACKETS 64
 #define pipe_depth 4
 #define DONE_BIT_L (1 << 7)
 #define DONE_BIT_H (1 << 15)

@@ -109,14 +109,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    file = (unsigned char*) malloc(sizeof(unsigned char) * 70000000);
+    // file = (unsigned char*) malloc(sizeof(unsigned char) * 70000000);
+    posix_memalign((void**)&file, 4*4096, sizeof(unsigned char) * 70000000);
     if (file == NULL) {
         printf("help\n");
     }
 
     for (int i = 0; i < NUM_PACKETS; i++) {
-        input[i] = (unsigned char*) malloc(
-                sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
+        // input[i] = (unsigned char*) malloc(
+        //         sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
+        posix_memalign((void**)&input[i], 4*4096, sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
         if (input[i] == NULL) {
             std::cout << "aborting " << std::endl;
             return 1;

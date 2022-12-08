@@ -78,7 +78,7 @@ void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t *
         if(packet_num == NUM_PACKETS){
             packet_num = 0; // ring buffer calculations
         }
-        
+
         LOG(LOG_INFO_1, "semaphore received, starting cdc, packet number: %d\n",packet_num);
 
         LOG(LOG_DEBUG, "new_packet_ptr = %p, sem_cdc = %p, sem_sha = %p\n",new_packet,sem_cdc,sem_cdc_sha);

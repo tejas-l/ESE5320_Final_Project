@@ -15,6 +15,9 @@ class LZW_kernel_call
     cl::Buffer          in_buf;
     cl::Buffer          out_buf;
     cl::Buffer          out_len;
+    cl::Buffer          chunk_lengths_buf;
+    cl::Buffer          chunk_numbers_buf;
+    cl::Buffer          chunk_isdups_buf;
     cl::Context         context;
 
     public:
@@ -22,13 +25,25 @@ class LZW_kernel_call
                     cl::Program &program, 
                     cl::CommandQueue &queue);
 
-    void LZW_kernel_run(unsigned int HW_LZW_IN_LEN,
-                        size_t in_buf_size,
+    void LZW_kernel_run(size_t in_buf_size,
                         unsigned char* to_fpga,
+
                         size_t out_buf_size,
                         unsigned char* from_fpga,
+
+                        size_t chunk_lengths_size,
+                        unsigned int* chunk_lengths,
+
+                        size_t chunk_numbers_size,
+                        unsigned int* chunk_numbers,
+                        
+                        size_t chunk_isdups_size,
+                        unsigned char* chunk_isdups,
+
                         size_t out_len_size,
-                        unsigned int* LZW_HW_output_length_ptr);
+                        unsigned int* LZW_HW_output_length_ptr,
+                        
+                        uint64_t num_chunks);
 };
 
 
