@@ -67,7 +67,20 @@ uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
   return h;
 
 }
+uint32_t FNV_32(const void * hash_result, unsigned int length) {
+	const unsigned int fnv_prime = 0x811C9DC5;
+	unsigned int hash = 0;
+	const char * str = (const char *)hash_result;
+	unsigned int i = 0;
 
+	for (i = 0; i < length; str++, i++)
+	{
+		hash *= fnv_prime;
+		hash ^= (*str);
+	}
+
+	return hash;
+}
 
 // int Murmur_find(uint64_t hash_result,int code, uint64_t* table){
 
@@ -80,9 +93,9 @@ uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
 //     return -1;
 // }
 
-int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint64_t hash_result){
+int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint32_t hash_result){
 #pragma HLS INLINE
-    uint64_t hash = hash_result % HASH_MOD;
+    uint32_t hash = hash_result % HASH_MOD;
     for(int col = 0; col < BUCKET_SIZE; col++){
         if(hash_node_ptr[hash][col].hash_value == 0){
             hash_node_ptr[hash][col].hash_value = hash_result;
@@ -94,9 +107,9 @@ int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint64_t hash_re
     return -1;
 }
 
-int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint64_t hash_result){
+int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint32_t hash_result){
 #pragma HLS INLINE
-    uint64_t hash = hash_result % HASH_MOD;
+    uint32_t hash = hash_result % HASH_MOD;
     for(int col = 0; col < BUCKET_SIZE; col++){
         if(hash_node_ptr[hash][col].hash_value == hash_result){
             return hash_node_ptr[hash][col].code;
@@ -106,15 +119,15 @@ int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint64_t hash_result){
 }
 
 
-uint8_t associative_insert(ap_uint<72> key[][8], int* value, uint8_t counter, uint64_t hash_value, int code)
+uint8_t associative_insert(ap_uint<72> key[][512], int* value, uint8_t counter, uint32_t hash_value, int code)
 {
-    ap_uint<9> index[8] ;
-    for(int i = 0; i< 8; i++){
+    ap_uint<9> index[4] ;
+    for(int i = 0; i< 4; i++){
         index[i] = 0;
     } 
     value[counter] = code;
 
-    for (int i = 0; i < 8 ; i++)
+    for (int i = 0; i < 4 ; i++)
     {
         #pragma HLS UNROLL 
         index[i] = (hash_value >> (9*i)) & (0x1FF);    
@@ -123,10 +136,10 @@ uint8_t associative_insert(ap_uint<72> key[][8], int* value, uint8_t counter, ui
     ap_uint<72> one_hot = 0 ; 
     one_hot =  1 << counter;
 
-    for (int i = 0; i < 8 ; i++){
+    for (int i = 0; i < 4 ; i++){
     #pragma HLS UNROLL 
 
-        key[index[i]][i] |= one_hot; 
+        key[i][index[i]] |= one_hot; 
 
     }
 
@@ -137,30 +150,30 @@ uint8_t associative_insert(ap_uint<72> key[][8], int* value, uint8_t counter, ui
 
 int reverse_one_hot(ap_uint<72> address){
     for(int i = 0; i<72; i++){
-        if(address >> i == 1){
+        if((address>>i) == 1){
             return i;
         }
     }
     return -1;
 }
 
-int associative_find(ap_uint<72>key[][8], int* value, uint64_t hash_value)
+int associative_find(ap_uint<72>key[][512], int* value, uint32_t hash_value)
 {
-    ap_uint<9> index[8]; 
-    for(int i = 0; i< 8; i++){
+    ap_uint<9> index[4]; 
+    for(int i = 0; i< 4; i++){
         index[i] = 0;
     } 
-    for (int i = 0; i < 8 ; i++)
+    for (int i = 0; i < 4 ; i++)
     {
         #pragma HLS UNROLL 
         index[i] = (hash_value >> (9*i)) & (0x1FF);    
     }
 
-    ap_uint<72> address = key[index[0]][0] & key[index[1]][1]; 
-    for (int i =2;  i < 8; i++ )
+    ap_uint<72> address = key[0][index[0]] & key[1][index[1]]; 
+    for (int i = 2;  i < 4; i++ )
     {
         #pragma HLS UNROLL
-        address &=  key[index[i]][i];
+        address &=  key[i][index[i]];
     }
 
     if(address == 0){
@@ -244,11 +257,11 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
         if(!chunk_isdup_lzw)
         {
             hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
-            ap_uint<72> key[512][8]; 
-            int value[72];
+            ap_uint<72> key[4][512]; 
+            int value[72] = {0};
             uint8_t counter = 0;
-            for(int i = 0; i<512; i++){
-                for(int j = 0; j < 8; j++){
+            for(int i = 0; i<4; i++){
+                for(int j = 0; j < 512; j++){
                     key[i][j] = 0;
                 }
             }
@@ -278,7 +291,9 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
                     substring_arr_index++;
                 }
 
-                uint64_t hash_result = MurmurHash2((void*)substring_array,substring_arr_index,1);
+                // uint32_t hash_result = MurmurHash2((void*)substring_array,substring_arr_index,1);
+                uint32_t hash_result = FNV_32((void*)substring_array,substring_arr_index);
+
 
                 //MurmurHash
                 int res = Find(hash_node_ptr, hash_result);
@@ -290,13 +305,14 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
                 if ( res < 0 )
                 {   
-                    uint64_t hash_result1 = 0;
+                    uint32_t hash_result1 = 0;
                     int lookup_value = 0;
                     if(substring_arr_index <= 2){
                         lookup_value = (int)substring_array[0];
                         write_flag = 0;
                     }else{
-                        hash_result1 = MurmurHash2((void*)substring_array,substring_arr_index-1,1);
+                        // hash_result1 = MurmurHash2((void*)substring_array,substring_arr_index-1,1);
+                        hash_result1 = FNV_32((void*)substring_array,substring_arr_index-1);
                         lookup_value = Find(hash_node_ptr, hash_result1);
                         if(lookup_value < 0){
                             lookup_value = associative_find(key, value, hash_result1);
@@ -321,7 +337,9 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
             }
 
             if(write_flag){
-                uint64_t hash_result2 = MurmurHash2((void*)substring_array,substring_arr_index,1);
+                // uint32_t hash_result2 = MurmurHash2((void*)substring_array,substring_arr_index,1);
+                uint32_t hash_result2 = FNV_32((void*)substring_array,substring_arr_index);
+
                 int lookup_value1 = Find(hash_node_ptr, hash_result2);
                 if(lookup_value1 < 0){ 
                     lookup_value1 = associative_find(key, value, hash_result2);
