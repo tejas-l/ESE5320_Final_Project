@@ -66,6 +66,10 @@ stopwatch sha_time;
 stopwatch dedup_time;
 stopwatch lzw_time;
 
+volatile int input_packets_done = 0;
+volatile int num_input_packets = 0;
+volatile int sem_done;
+
 
 int main(int argc, char* argv[]) {
     stopwatch ethernet_timer;
@@ -170,9 +174,11 @@ int main(int argc, char* argv[]) {
     char *fileBuf = read_binary_file(binaryFile, fileBufSize);
     cl::Program::Binaries bins{{fileBuf, fileBufSize}};
     cl::Program program(context, devices, bins, NULL, &err);
-    cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
+    cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
 
     LZW_kernel_call lzw_kernel(context, program, q);
+
+    LOG(LOG_DEBUG, "LZW constructor initialized\n");
 
 
     /*
@@ -188,8 +194,6 @@ int main(int argc, char* argv[]) {
     sem_t sem_sha_dedup;
     sem_t sem_dedup_lzw;
     sem_t sem_lzw;
-
-    int sem_done;
 
 
     sem_init(&sem_cdc,0,0); // initialize with sem value 0 meaning not ready
@@ -218,8 +222,11 @@ int main(int argc, char* argv[]) {
     pin_thread_to_cpu(ths[3],3);
 
     total_time.start();
+    int num_sems_released = 0;
 
     sem_post(&sem_cdc);
+    num_sems_released++;
+    num_input_packets++;
 
     LOG(LOG_DEBUG,"num_packets_in_pipeline = %d\n",num_packets_in_pipeline);
 
@@ -259,10 +266,13 @@ int main(int argc, char* argv[]) {
         writer++;
         num_packets_received++;
 
-        Input_bytes = length;
+        Input_bytes += length;
 
         LOG(LOG_DEBUG, "posted cdc sem, num packets in pipeline = %d\n",num_packets_in_pipeline);
+
+        num_input_packets++;
         sem_post(&sem_cdc);
+        num_sems_released++;
 
         if(num_packets_in_pipeline == NUM_PACKETS){//(NUM_PACKETS-1)){
             sem_wait(&sem_lzw);
@@ -274,18 +284,25 @@ int main(int argc, char* argv[]) {
         LOG(LOG_DEBUG,"Start of Loop, packet size = %d\r\n",length);
     }
 
+    // signal threads that all input packets are inserted.
+    input_packets_done = 1;
+    LOG(LOG_DEBUG,"EXITED WHILE LOOP");
+    LOG(LOG_DEBUG,"releasing sem done, num sems released = %d\n",num_sems_released);
+
     while(num_packets_in_pipeline--){
+        LOG(LOG_DEBUG,"MAIN: PACKETS IN PIPELINE = %d\n",num_packets_in_pipeline);
         sem_wait(&sem_lzw);
         num_packets_processed++;
     }
 
     total_time.stop();
-    
+
     // make the threads exit
     sem_done = 1;
     sem_post(&sem_cdc);
+    num_sems_released++;
+    LOG(LOG_DEBUG,"MAIN: num sems released = %d\n",num_sems_released);
     sem_wait(&sem_lzw);
-    
 
     for(auto &th : ths){
         th.join();

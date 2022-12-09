@@ -12,15 +12,38 @@ class LZW_kernel_call
 {
     cl::Kernel          kernel;
     cl::CommandQueue    q;
-    cl::Buffer          in_buf;
-    cl::Buffer          out_buf;
-    cl::Buffer          out_len;
-    cl::Buffer          chunk_lengths_buf;
-    cl::Buffer          chunk_numbers_buf;
-    cl::Buffer          chunk_isdups_buf;
     cl::Context         context;
+    // cl::Buffer          in_buf;
+    // cl::Buffer          out_buf;
+    // cl::Buffer          out_len;
+    // cl::Buffer          chunk_lengths_buf;
+    // cl::Buffer          chunk_numbers_buf;
+    // cl::Buffer          chunk_isdups_buf;
+    cl::Buffer          in_buf[NUM_PACKETS];
+    cl::Buffer          out_buf[NUM_PACKETS];
+    cl::Buffer          out_len[NUM_PACKETS];
+    cl::Buffer          chunk_lengths_buf[NUM_PACKETS];
+    cl::Buffer          chunk_numbers_buf[NUM_PACKETS];
+    cl::Buffer          chunk_isdups_buf[NUM_PACKETS];
+
+    std::vector<std::vector<cl::Event>> write_events_vec;
+    std::vector<std::vector<cl::Event>> execute_events_vec;
+    std::vector<std::vector<cl::Event>> read_events_vec;
+    // cl::Event write_event, execute_event, read_event;
+
+    /* initialized to 0 in constructor. 
+     * used to keep track of opencl events 
+     * */
+    int num_events;
 
     public:
+    unsigned char * to_fpga_buf[NUM_PACKETS];
+    unsigned char * from_fpga_buf[NUM_PACKETS];
+    unsigned int * LZW_HW_output_length_ptr[NUM_PACKETS];
+    unsigned int * chunk_lengths_buf_ptr[NUM_PACKETS];
+    unsigned int* chunk_numbers_buf_ptr[NUM_PACKETS];
+    unsigned char* chunk_isdups_buf_ptr[NUM_PACKETS];
+
     LZW_kernel_call(cl::Context &context_1, 
                     cl::Program &program, 
                     cl::CommandQueue &queue);
@@ -43,11 +66,16 @@ class LZW_kernel_call
                         size_t out_len_size,
                         unsigned int* LZW_HW_output_length_ptr,
                         
-                        uint64_t num_chunks);
+                        uint64_t num_chunks,
+                        int packet_num);
+    
+    int LZW_wait_on_read_event(void);
+
+    void LZW_q_finish_wait(void);
 };
 
 
 uint64_t compress(unsigned int *compressed_data, unsigned int compressed_data_len);
 uint64_t LZW_encoding(chunk_t* chunk);
-uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw, int *sem_done);
+uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw, volatile int *sem_done);
 #endif

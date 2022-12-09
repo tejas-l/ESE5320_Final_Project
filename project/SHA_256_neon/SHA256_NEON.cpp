@@ -264,7 +264,7 @@ void SHA256_NEON(chunk_t *chunk)//, wc_Sha3* sha3_384)
 
 }
 
-void SHA256_NEON_packet_level(packet_t **packet_ring_buf, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, int *sem_done)
+void SHA256_NEON_packet_level(packet_t **packet_ring_buf, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, volatile int *sem_done)
 {
     uint8_t shaChar[32]={0};
     static int packet_num = 0;

@@ -59,7 +59,7 @@ void CDC(unsigned char *buff, chunk_t *chunk, int packet_length, int last_index)
 }
 
 //For rolling hash 
-void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t * const sem_cdc_sha, int *sem_done)
+void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t * const sem_cdc_sha, volatile int *sem_done)
 {
     static const double cdc_pow = pow(PRIME,WIN_SIZE+1);
     static int packet_num = 0;
@@ -69,6 +69,7 @@ void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t *
         sem_wait(sem_cdc);
 
         if(*sem_done == 1){
+            LOG(LOG_DEBUG,"EXITING CDC THREAD\n");
             sem_post(sem_cdc_sha);
             return;
         }

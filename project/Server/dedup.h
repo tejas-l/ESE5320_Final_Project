@@ -6,6 +6,6 @@
 
 
 uint32_t dedup(chunk_t *chunk);
-void dedup_packet_level(packet_t **packet_ring_buf, sem_t *sem_sha_dedup, sem_t *sem_dedup_lzw, int *sem_done);
+void dedup_packet_level(packet_t **packet_ring_buf, sem_t *sem_sha_dedup, sem_t *sem_dedup_lzw, volatile int *sem_done);
 
 #endif

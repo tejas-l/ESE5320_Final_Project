@@ -23,7 +23,7 @@ uint32_t dedup(chunk_t *chunk)
     }
 }
 
-void dedup_packet_level(packet_t **packet_ring_buf, sem_t *sem_sha_dedup, sem_t *sem_dedup_lzw, int *sem_done)
+void dedup_packet_level(packet_t **packet_ring_buf, sem_t *sem_sha_dedup, sem_t *sem_dedup_lzw, volatile int *sem_done)
 {
     static std::unordered_map<std::string, uint32_t> SHA_map;
     static uint32_t num_unique_chunk = 0;
@@ -34,6 +34,7 @@ void dedup_packet_level(packet_t **packet_ring_buf, sem_t *sem_sha_dedup, sem_t 
         sem_wait(sem_sha_dedup);
 
         if(*sem_done == 1){
+            LOG(LOG_DEBUG,"EXITING DEDUP THREAD\n");
             sem_post(sem_dedup_lzw);
             return;
         }

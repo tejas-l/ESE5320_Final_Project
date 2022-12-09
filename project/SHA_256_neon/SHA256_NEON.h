@@ -74,7 +74,7 @@ void sha256_process_arm(uint32_t state[8], const uint8_t data[], uint32_t length
 
 void SHA256_NEON(chunk_t *chunk);
 
-void SHA256_NEON_packet_level(packet_t **packet_ring_buf, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, int *sem_done);
+void SHA256_NEON_packet_level(packet_t **packet_ring_buf, sem_t *sem_cdc_sha, sem_t *sem_sha_dedup, volatile int *sem_done);
 
 #if defined(__arm__) || defined(__aarch32__) || defined(__arm64__) || defined(__aarch64__) || defined(_M_ARM)
 # if defined(__GNUC__)
