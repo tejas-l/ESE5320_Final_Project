@@ -18,62 +18,64 @@
 
 typedef struct hash_node{   
     int code;
-    uint64_t hash_value;
+    uint32_t hash_value;
 }hash_node_t;
 
+typedef ap_uint<72> key_size_t;
 
 
-uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
 
-  const uint64_t m = 0xc6a4a7935bd1e995;
-  const int r = 47;
+// uint64_t MurmurHash2(const void* key, int len, uint64_t seed) {
 
-  uint64_t h = seed ^ (len * m);
+//   const uint64_t m = 0xc6a4a7935bd1e995;
+//   const int r = 47;
 
-  const uint64_t * data = (const uint64_t *)key;
-  const uint64_t * end = data + (len/8);
+//   uint64_t h = seed ^ (len * m);
 
-    while(data != end)
-    {
-        uint64_t k = *data;
+//   const uint64_t * data = (const uint64_t *)key;
+//   const uint64_t * end = data + (len/8);
 
-        k *= m; 
-        k ^= k >> r; 
-        k *= m; 
+//     while(data != end)
+//     {
+//         uint64_t k = *data;
+
+//         k *= m; 
+//         k ^= k >> r; 
+//         k *= m; 
         
-        h ^= k;
-        h *= m; 
-        data++;
-    }
+//         h ^= k;
+//         h *= m; 
+//         data++;
+//     }
 
-  const unsigned char * data2 = (const unsigned char*)data;
+//   const unsigned char * data2 = (const unsigned char*)data;
 
-  switch(len & 7)
-  {
-  case 7: h ^= uint64_t(data2[6]) << 48;
-  case 6: h ^= uint64_t(data2[5]) << 40;
-  case 5: h ^= uint64_t(data2[4]) << 32;
-  case 4: h ^= uint64_t(data2[3]) << 24;
-  case 3: h ^= uint64_t(data2[2]) << 16;
-  case 2: h ^= uint64_t(data2[1]) << 8;
-  case 1: h ^= uint64_t(data2[0]);
-          h *= m;
-  };
+//   switch(len & 7)
+//   {
+//   case 7: h ^= uint64_t(data2[6]) << 48;
+//   case 6: h ^= uint64_t(data2[5]) << 40;
+//   case 5: h ^= uint64_t(data2[4]) << 32;
+//   case 4: h ^= uint64_t(data2[3]) << 24;
+//   case 3: h ^= uint64_t(data2[2]) << 16;
+//   case 2: h ^= uint64_t(data2[1]) << 8;
+//   case 1: h ^= uint64_t(data2[0]);
+//           h *= m;
+//   };
  
-  h ^= h >> r;
-  h *= m;
-  h ^= h >> r;
+//   h ^= h >> r;
+//   h *= m;
+//   h ^= h >> r;
 
-  return h;
+//   return h;
 
-}
+// }
 uint32_t FNV_32(const void * hash_result, unsigned int length) {
 	const unsigned int fnv_prime = 0x811C9DC5;
 	unsigned int hash = 0;
 	const char * str = (const char *)hash_result;
 	unsigned int i = 0;
 
-	for (i = 0; i < length; str++, i++)
+FNV_LOOP:for (i = 0; i < length; str++, i++)
 	{
 		hash *= fnv_prime;
 		hash ^= (*str);
@@ -96,21 +98,21 @@ uint32_t FNV_32(const void * hash_result, unsigned int length) {
 int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint32_t hash_result){
 #pragma HLS INLINE
     uint32_t hash = hash_result % HASH_MOD;
-    for(int col = 0; col < BUCKET_SIZE; col++){
+INSERT_LOOP:for(int col = 0; col < BUCKET_SIZE; col++){
         if(hash_node_ptr[hash][col].hash_value == 0){
             hash_node_ptr[hash][col].hash_value = hash_result;
             hash_node_ptr[hash][col].code = code;
             return 1;
         }
     }
-    printf("Collision detected\n");
+    // printf("Collision detected\n");
     return -1;
 }
 
 int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint32_t hash_result){
 #pragma HLS INLINE
     uint32_t hash = hash_result % HASH_MOD;
-    for(int col = 0; col < BUCKET_SIZE; col++){
+FIND_LOOP:for(int col = 0; col < BUCKET_SIZE; col++){
         if(hash_node_ptr[hash][col].hash_value == hash_result){
             return hash_node_ptr[hash][col].code;
         }
@@ -122,12 +124,9 @@ int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint32_t hash_result){
 uint8_t associative_insert(ap_uint<72> key[][512], int* value, uint8_t counter, uint32_t hash_value, int code)
 {
     ap_uint<9> index[4] ;
-    for(int i = 0; i< 4; i++){
-        index[i] = 0;
-    } 
     value[counter] = code;
 
-    for (int i = 0; i < 4 ; i++)
+ASSOCIATIVE_INSERT_LOOP_1:for (int i = 0; i < 4 ; i++)
     {
         #pragma HLS UNROLL 
         index[i] = (hash_value >> (9*i)) & (0x1FF);    
@@ -136,7 +135,7 @@ uint8_t associative_insert(ap_uint<72> key[][512], int* value, uint8_t counter, 
     ap_uint<72> one_hot = 0 ; 
     one_hot =  1 << counter;
 
-    for (int i = 0; i < 4 ; i++){
+ASSOCIATIVE_INSERT_LOOP_2:for (int i = 0; i < 4 ; i++){
     #pragma HLS UNROLL 
 
         key[i][index[i]] |= one_hot; 
@@ -149,7 +148,7 @@ uint8_t associative_insert(ap_uint<72> key[][512], int* value, uint8_t counter, 
 }
 
 int reverse_one_hot(ap_uint<72> address){
-    for(int i = 0; i<72; i++){
+REVERSE_ONE_HOT_LOOP:for(int i = 0; i<72; i++){
         if((address>>i) == 1){
             return i;
         }
@@ -160,17 +159,14 @@ int reverse_one_hot(ap_uint<72> address){
 int associative_find(ap_uint<72>key[][512], int* value, uint32_t hash_value)
 {
     ap_uint<9> index[4]; 
-    for(int i = 0; i< 4; i++){
-        index[i] = 0;
-    } 
-    for (int i = 0; i < 4 ; i++)
+ASSOCIATIVE_FIND_LOOP_1:for (int i = 0; i < 4 ; i++)
     {
         #pragma HLS UNROLL 
         index[i] = (hash_value >> (9*i)) & (0x1FF);    
     }
 
     ap_uint<72> address = key[0][index[0]] & key[1][index[1]]; 
-    for (int i = 2;  i < 4; i++ )
+ASSOCIATIVE_FIND_LOOP_2:for (int i = 2;  i < 4; i++ )
     {
         #pragma HLS UNROLL
         address &=  key[i][index[i]];
@@ -207,7 +203,7 @@ void read  (unsigned char* data_in,
     unsigned int chunk_length_read = 0;
     unsigned char chunk_isdup_read = 0;
 
-    for(uint64_t i =0; i < num_chunks_local; i++)
+READ_LOOP_1:for(uint64_t i =0; i < num_chunks_local; i++)
     {
         chunk_number_read = chunk_numbers[i];
         chunk_length_read = chunk_lengths[i];
@@ -218,7 +214,7 @@ void read  (unsigned char* data_in,
         
         if(!chunk_isdup_read)
         {
-            for (unsigned int j = 0; j < chunk_length_read; j++)
+            READ_LOOP_2:for (unsigned int j = 0; j < chunk_length_read; j++)
             {
                 #pragma HLS PIPELINE
                 uint8_t temp_data = data_in[running_length + j + 2];
@@ -244,8 +240,11 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
     unsigned int chunk_number_lzw = 0;
     unsigned int chunk_length_lzw = 0;
     unsigned char chunk_isdup_lzw = 0;
+    hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
 
-    for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
+
+
+LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
     {
         chunk_length_lzw = chunk_lengths_read.read();
         chunk_isdup_lzw = chunk_isdups_read.read();
@@ -256,24 +255,21 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
         
         if(!chunk_isdup_lzw)
         {
-            hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
-            ap_uint<72> key[4][512]; 
-            int value[72] = {0};
+            key_size_t key[4][512]; 
+            int value[72];
             uint8_t counter = 0;
-            for(int i = 0; i<4; i++){
-                for(int j = 0; j < 512; j++){
-                    key[i][j] = 0;
-                }
-            }
-            for(int i = 0; i < 72; i++){
-                value[i] = 0;
-            }
-
-            for(int i = 0; i < ARR_SIZE; i++){
-                for(int j = 0; j < BUCKET_SIZE; j++){
-                    hash_node_ptr[i][j].hash_value = 0;         
-                }
-            }
+            // LZW_KEY_CLEAR_LOOP_1:for(int i = 0; i<4; i++){
+            //     LZW_KEY_CLEAR_LOOP_2:for(int j = 0; j < 512; j++){
+            //         key[i][j] = 0;
+            //     }
+            // }
+            // LZW_HASH_CLEAR_LOOP_1:for(int i = 0; i < ARR_SIZE; i++){
+            //     LZW_HASH_CLEAR_LOOP_2:for(int j = 0; j < BUCKET_SIZE; j++){
+            //         hash_node_ptr[i][j].hash_value = 0;         
+            //     }
+            // }
+            memset(key, 0, sizeof(key_size_t)*4*512);
+            memset(hash_node_ptr, 0, sizeof(hash_node_t)*HASH_TABLE_SIZE*BUCKET_SIZE);
             unsigned char substring_array[ARR_SIZE] = {0};
             unsigned int  substring_arr_index = 0;
 
@@ -283,7 +279,7 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
 
             int code = 256;
             int write_flag = 0;
-            for (unsigned int i = 0; i < chunk_length_lzw; i++)
+            LZW_LOOP_2:for (unsigned int i = 0; i < chunk_length_lzw; i++)
             {
                 if (i != chunk_length_lzw - 1){
                     c = in_stream.read();
@@ -324,8 +320,6 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
                     int insert_result = Insert(hash_node_ptr, code, hash_result); // Stores hash for p+c
                     if ((insert_result < 0) && counter < 72){
                         counter = associative_insert(key, value, counter, hash_result, code);
-                    }else if (counter == 72){
-                        printf("Associative memory insert not going to happen\n");
                     }
 
                     code++;
@@ -367,7 +361,7 @@ void execute_compress ( hls::stream<int> &lzw_out_stream,
     unsigned int chunk_number_comp = 0;
     unsigned char chunk_isdup_comp = 0;
 
-    for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
+    COMP_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
     {
         chunk_isdup_comp = chunk_isdups_lzw.read();
         chunk_number_comp = chunk_numbers_lzw.read();
@@ -385,7 +379,7 @@ void execute_compress ( hls::stream<int> &lzw_out_stream,
             
             unsigned char lzw_sync_local = lzw_sync.read();
             
-            while(!lzw_sync_local)
+            COMP_LOOP_2:while(!lzw_sync_local)
             {
                 i++;
                 int inData = lzw_out_stream.read();
@@ -442,7 +436,7 @@ void write (hls::stream<unsigned char> &out_stream,
     unsigned int chunk_number_write = 0;
     unsigned char chunk_isdup_write = 0;
 
-    for(uint64_t chunks = 0; chunks < num_chunks_local; chunks++)
+    READ_LOOP_1:for(uint64_t chunks = 0; chunks < num_chunks_local; chunks++)
     {
         chunk_isdup_write = chunk_isdups_comp.read();
         chunk_number_write = chunk_numbers_comp.read();
@@ -457,7 +451,7 @@ void write (hls::stream<unsigned char> &out_stream,
             out_index += 4;
             unsigned char comp_sync = compress_sync.read();
 
-            while(!comp_sync)
+            READ_LOOP_2:while(!comp_sync)
             {
                 #pragma HLS PIPELINE
                 output[out_index] = out_stream.read();
