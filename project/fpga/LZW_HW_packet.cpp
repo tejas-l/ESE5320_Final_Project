@@ -96,9 +96,9 @@ FNV_LOOP:for (i = 0; i < length; str++, i++)
 // }
 
 int Insert (hash_node_t hash_node_ptr[][BUCKET_SIZE], int code, uint32_t hash_result){
-#pragma HLS INLINE
     uint32_t hash = hash_result % HASH_MOD;
 INSERT_LOOP:for(int col = 0; col < BUCKET_SIZE; col++){
+    #pragma HLS UNROLL factor=3
         if(hash_node_ptr[hash][col].hash_value == 0){
             hash_node_ptr[hash][col].hash_value = hash_result;
             hash_node_ptr[hash][col].code = code;
@@ -110,9 +110,9 @@ INSERT_LOOP:for(int col = 0; col < BUCKET_SIZE; col++){
 }
 
 int Find (hash_node_t hash_node_ptr[][BUCKET_SIZE], uint32_t hash_result){
-#pragma HLS INLINE
     uint32_t hash = hash_result % HASH_MOD;
 FIND_LOOP:for(int col = 0; col < BUCKET_SIZE; col++){
+    #pragma HLS UNROLL factor=3
         if(hash_node_ptr[hash][col].hash_value == hash_result){
             return hash_node_ptr[hash][col].code;
         }
@@ -148,6 +148,7 @@ ASSOCIATIVE_INSERT_LOOP_2:for (int i = 0; i < 4 ; i++){
 }
 
 int reverse_one_hot(ap_uint<72> address){
+#pragma HLS INLINE
 REVERSE_ONE_HOT_LOOP:for(int i = 0; i<72; i++){
         if((address>>i) == 1){
             return i;
@@ -240,7 +241,6 @@ void execute_lzw(   hls::stream<unsigned char> &in_stream,
     unsigned int chunk_number_lzw = 0;
     unsigned int chunk_length_lzw = 0;
     unsigned char chunk_isdup_lzw = 0;
-    hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
 
 
 
@@ -255,21 +255,27 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
         
         if(!chunk_isdup_lzw)
         {
-            key_size_t key[4][512]; 
+            static hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
+            #pragma HLS array_partition variable=hash_node_ptr block factor=3 dim=2
+            static key_size_t key[4][512]; 
+            #pragma HLS array_partition variable=key block factor=4 dim=1
             int value[72];
             uint8_t counter = 0;
-            // LZW_KEY_CLEAR_LOOP_1:for(int i = 0; i<4; i++){
-            //     LZW_KEY_CLEAR_LOOP_2:for(int j = 0; j < 512; j++){
-            //         key[i][j] = 0;
-            //     }
-            // }
-            // LZW_HASH_CLEAR_LOOP_1:for(int i = 0; i < ARR_SIZE; i++){
-            //     LZW_HASH_CLEAR_LOOP_2:for(int j = 0; j < BUCKET_SIZE; j++){
-            //         hash_node_ptr[i][j].hash_value = 0;         
-            //     }
-            // }
-            memset(key, 0, sizeof(key_size_t)*4*512);
-            memset(hash_node_ptr, 0, sizeof(hash_node_t)*HASH_TABLE_SIZE*BUCKET_SIZE);
+            LZW_KEY_CLEAR_LOOP_1:for(int i = 0; i<512; i++){
+                #pragma HLS loop_flatten
+                // #pragma HLS loop_merge force
+                LZW_KEY_CLEAR_LOOP_2:for(int j = 0; j < 4; j++){
+                #pragma HLS UNROLL factor=4
+                    key[j][i] = 0;
+                }
+            }
+            LZW_HASH_CLEAR_LOOP_1:for(int i = 0; i < ARR_SIZE; i++){
+                #pragma HLS loop_flatten
+                LZW_HASH_CLEAR_LOOP_2:for(int j = 0; j < BUCKET_SIZE; j++){
+                #pragma HLS UNROLL factor=3
+                    hash_node_ptr[i][j].hash_value = 0;         
+                }
+            }
             unsigned char substring_array[ARR_SIZE] = {0};
             unsigned int  substring_arr_index = 0;
 
@@ -333,7 +339,6 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
             if(write_flag){
                 // uint32_t hash_result2 = MurmurHash2((void*)substring_array,substring_arr_index,1);
                 uint32_t hash_result2 = FNV_32((void*)substring_array,substring_arr_index);
-
                 int lookup_value1 = Find(hash_node_ptr, hash_result2);
                 if(lookup_value1 < 0){ 
                     lookup_value1 = associative_find(key, value, hash_result2);
@@ -345,6 +350,13 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
 
             lzw_sync.write(1);
         }
+        // else{
+        //     LZW_LOOP_3:for (unsigned int i = 0; i < chunk_length_lzw; i++)
+        //     {
+        //         #pragma HLS PIPELINE II=1
+        //         in_stream.read();
+        //     }
+        // }
 
     }
 }
@@ -501,6 +513,7 @@ void LZW_encoding_HW(unsigned char* data_in, unsigned int* chunk_lengths, unsign
 #pragma HLS INTERFACE m_axi depth=512 port=chunk_lengths bundle=p0
 #pragma HLS INTERFACE m_axi depth=512 port=chunk_numbers bundle=p0
 #pragma HLS INTERFACE m_axi depth=512 port=chunk_isdups bundle=p0
+// #pragma HLS INTERFACE ap_rst port=return
 
 uint64_t num_chunks_local = num_chunks; 
 
