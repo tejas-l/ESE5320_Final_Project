@@ -13,12 +13,6 @@ class LZW_kernel_call
     cl::Kernel          kernel;
     cl::CommandQueue    q;
     cl::Context         context;
-    // cl::Buffer          in_buf;
-    // cl::Buffer          out_buf;
-    // cl::Buffer          out_len;
-    // cl::Buffer          chunk_lengths_buf;
-    // cl::Buffer          chunk_numbers_buf;
-    // cl::Buffer          chunk_isdups_buf;
     cl::Buffer          in_buf[NUM_PACKETS];
     cl::Buffer          out_buf[NUM_PACKETS];
     cl::Buffer          out_len[NUM_PACKETS];
@@ -26,20 +20,16 @@ class LZW_kernel_call
     cl::Buffer          chunk_numbers_buf[NUM_PACKETS];
     cl::Buffer          chunk_isdups_buf[NUM_PACKETS];
 
-    std::vector<std::vector<cl::Event>> write_events_vec;
-    std::vector<std::vector<cl::Event>> execute_events_vec;
-    std::vector<std::vector<cl::Event>> read_events_vec;
-    // cl::Event write_event, execute_event, read_event;
 
-    /* initialized to 0 in constructor. 
-     * used to keep track of opencl events 
-     * */
-    int num_events;
+    std::vector<cl::Event> write_events_vec;
+    std::vector<cl::Event> execute_events_vec;
+    std::vector<cl::Event> read_events_vec;
+    std::vector<cl::Event> read_len_events_vec;
 
     public:
     unsigned char * to_fpga_buf[NUM_PACKETS];
     unsigned char * from_fpga_buf[NUM_PACKETS];
-    unsigned int * LZW_HW_output_length_ptr[NUM_PACKETS];
+    volatile unsigned int * LZW_HW_output_length_ptr[NUM_PACKETS];
     unsigned int * chunk_lengths_buf_ptr[NUM_PACKETS];
     unsigned int* chunk_numbers_buf_ptr[NUM_PACKETS];
     unsigned char* chunk_isdups_buf_ptr[NUM_PACKETS];
@@ -47,6 +37,8 @@ class LZW_kernel_call
     LZW_kernel_call(cl::Context &context_1, 
                     cl::Program &program, 
                     cl::CommandQueue &queue);
+
+    ~LZW_kernel_call();
 
     void LZW_kernel_run(size_t in_buf_size,
                         unsigned char* to_fpga,
@@ -64,7 +56,6 @@ class LZW_kernel_call
                         unsigned char* chunk_isdups,
 
                         size_t out_len_size,
-                        unsigned int* LZW_HW_output_length_ptr,
                         
                         uint64_t num_chunks,
                         int packet_num);

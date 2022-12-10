@@ -59,7 +59,7 @@ void handle_input(int argc, char* argv[], int* blocksize) {
     }
 }
 
-static unsigned int LZW_in_bytes = 0;
+// static unsigned int LZW_in_bytes = 0;
 static unsigned int Input_bytes = 0;
 stopwatch cdc_time;
 stopwatch sha_time;
@@ -91,10 +91,6 @@ int main(int argc, char* argv[]) {
 
     /* packets structs for different stages in pipeline */
 
-    new_chunk.number = 0;
-
-    int input_bytes=0;
-
     // default is 2k
     int blocksize = BLOCKSIZE;
 
@@ -113,15 +109,13 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // file = (unsigned char*) malloc(sizeof(unsigned char) * 70000000);
+
     posix_memalign((void**)&file, 4*4096, sizeof(unsigned char) * 70000000);
     if (file == NULL) {
         printf("help\n");
     }
 
     for (int i = 0; i < NUM_PACKETS; i++) {
-        // input[i] = (unsigned char*) malloc(
-        //         sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
         posix_memalign((void**)&input[i], 4*4096, sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
         if (input[i] == NULL) {
             std::cout << "aborting " << std::endl;
@@ -138,7 +132,7 @@ int main(int argc, char* argv[]) {
 
     server.setup_server(blocksize);
 
-    int file_size = 14247; // 14247 bytes per second
+    // int file_size = 14247; // 14247 bytes per second
     uint64_t data_received_bytes = 0;
     stopwatch total_time;
 
@@ -174,7 +168,7 @@ int main(int argc, char* argv[]) {
     char *fileBuf = read_binary_file(binaryFile, fileBufSize);
     cl::Program::Binaries bins{{fileBuf, fileBufSize}};
     cl::Program program(context, devices, bins, NULL, &err);
-    cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
+    cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);//CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
 
     LZW_kernel_call lzw_kernel(context, program, q);
 
@@ -269,6 +263,8 @@ int main(int argc, char* argv[]) {
         Input_bytes += length;
 
         LOG(LOG_DEBUG, "posted cdc sem, num packets in pipeline = %d\n",num_packets_in_pipeline);
+        // printf("MAIN: num packets in pipeline = %d\n",num_packets_in_pipeline);
+        // printf("MAIN: num sems posted = %d\n",num_sems_released);
 
         num_input_packets++;
         sem_post(&sem_cdc);
@@ -291,6 +287,7 @@ int main(int argc, char* argv[]) {
 
     while(num_packets_in_pipeline--){
         LOG(LOG_DEBUG,"MAIN: PACKETS IN PIPELINE = %d\n",num_packets_in_pipeline);
+        // printf("MAIN: PACKETS IN PIPELINE = %d\n",num_packets_in_pipeline);
         sem_wait(&sem_lzw);
         num_packets_processed++;
     }
@@ -312,17 +309,17 @@ int main(int argc, char* argv[]) {
         ths.pop_back();
     }
 
-    LOG(LOG_INFO_1,"Number of bytes going into LZW - %d \n",LZW_in_bytes);
+    // LOG(LOG_INFO_1,"Number of bytes going into LZW - %d \n",LZW_in_bytes);
     LOG(LOG_INFO_1,"Number of packets received = %d\n",num_packets_received);
     LOG(LOG_INFO_1,"Number of packets processed = %d\n",num_packets_processed);
 
     // write file to root and you can use diff tool on board
     FILE *outfd = fopen(filename, "wb");
     int bytes_written = fwrite(&file[0], 1, offset, outfd);
-    std::cout << "Average time for CDC = " << cdc_time.avg_latency() << "ms" << " Total time = " << cdc_time.latency() << "ms" << std::endl;
-    std::cout << "Average time for SHA = " << sha_time.avg_latency() << "ms" << " Total time = " << sha_time.latency() << "ms" << std::endl;
-    std::cout << "Average time for Dedup = " << dedup_time.avg_latency() << "ms" << " Total time = " << dedup_time.latency() << "ms" << std::endl;
-    std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << " Total time = " << lzw_time.latency() << "ms" << std::endl;
+    // std::cout << "Average time for CDC = " << cdc_time.avg_latency() << "ms" << " Total time = " << cdc_time.latency() << "ms" << std::endl;
+    // std::cout << "Average time for SHA = " << sha_time.avg_latency() << "ms" << " Total time = " << sha_time.latency() << "ms" << std::endl;
+    // std::cout << "Average time for Dedup = " << dedup_time.avg_latency() << "ms" << " Total time = " << dedup_time.latency() << "ms" << std::endl;
+    // std::cout << "Average time for LZW Encoding = " << lzw_time.avg_latency() << "ms" << " Total time = " << lzw_time.latency() << "ms" << std::endl;
 
     std::cout << "Total runtime = " << total_time.latency() << "ms" << std::endl;
     
@@ -338,7 +335,8 @@ int main(int argc, char* argv[]) {
 
     std::cout << "Throughput = " << (data_received_bytes*8/1000000.0)/(total_time.latency()/1000.0) << " Mb/s" << std::endl;
 
-    LOG(LOG_CRIT,"write file with %d\n", bytes_written);
+    std::cout << "write file with " << bytes_written << std::endl;
+
     fclose(outfd);
 
     for (int i = 0; i < NUM_PACKETS; i++) {
