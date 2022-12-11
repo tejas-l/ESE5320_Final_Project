@@ -121,19 +121,18 @@ FIND_LOOP:for(int col = 0; col < BUCKET_SIZE; col++){
 }
 
 
-uint8_t associative_insert(ap_uint<72> key[][512], int* value, uint8_t counter, uint32_t hash_value, int code)
+uint8_t associative_insert(key_size_t key[][512], int* value, uint8_t counter, uint32_t hash_value, int code)
 {
     ap_uint<9> index[4] ;
     value[counter] = code;
+    ap_uint<72> one_hot = 0 ; 
+    one_hot =  1 << counter;
 
 ASSOCIATIVE_INSERT_LOOP_1:for (int i = 0; i < 4 ; i++)
     {
         #pragma HLS UNROLL 
         index[i] = (hash_value >> (9*i)) & (0x1FF);    
     }
-
-    ap_uint<72> one_hot = 0 ; 
-    one_hot =  1 << counter;
 
 ASSOCIATIVE_INSERT_LOOP_2:for (int i = 0; i < 4 ; i++){
     #pragma HLS UNROLL 
@@ -157,7 +156,7 @@ REVERSE_ONE_HOT_LOOP:for(int i = 0; i<72; i++){
     return -1;
 }
 
-int associative_find(ap_uint<72>key[][512], int* value, uint32_t hash_value)
+int associative_find(key_size_t key[][512], int* value, uint32_t hash_value)
 {
     ap_uint<9> index[4]; 
 ASSOCIATIVE_FIND_LOOP_1:for (int i = 0; i < 4 ; i++)
@@ -255,9 +254,9 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
         
         if(!chunk_isdup_lzw)
         {
-            static hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
+            hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
             #pragma HLS array_partition variable=hash_node_ptr block factor=3 dim=2
-            static key_size_t key[4][512]; 
+            key_size_t key[4][512]; 
             #pragma HLS array_partition variable=key block factor=4 dim=1
             int value[72];
             uint8_t counter = 0;
@@ -268,7 +267,8 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
                 #pragma HLS UNROLL factor=4
                     key[j][i] = 0;
                 }
-            }
+                    }
+
             LZW_HASH_CLEAR_LOOP_1:for(int i = 0; i < ARR_SIZE; i++){
                 #pragma HLS loop_flatten
                 LZW_HASH_CLEAR_LOOP_2:for(int j = 0; j < BUCKET_SIZE; j++){
@@ -276,7 +276,8 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
                     hash_node_ptr[i][j].hash_value = 0;         
                 }
             }
-            unsigned char substring_array[ARR_SIZE] = {0};
+            unsigned char substring_array[ARR_SIZE];
+
             unsigned int  substring_arr_index = 0;
 
             unsigned char c;
@@ -448,7 +449,7 @@ void write (hls::stream<unsigned char> &out_stream,
     unsigned int chunk_number_write = 0;
     unsigned char chunk_isdup_write = 0;
 
-    READ_LOOP_1:for(uint64_t chunks = 0; chunks < num_chunks_local; chunks++)
+    WRITE_LOOP_1:for(uint64_t chunks = 0; chunks < num_chunks_local; chunks++)
     {
         chunk_isdup_write = chunk_isdups_comp.read();
         chunk_number_write = chunk_numbers_comp.read();
