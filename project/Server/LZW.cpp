@@ -32,7 +32,7 @@ LZW_kernel_call::LZW_kernel_call(cl::Context &context_1,
 
     size_t in_buf_size = (8192 + 2)*sizeof(unsigned char);
     size_t out_buf_size = 2*KERNEL_OUT_SIZE*sizeof(unsigned char);
-    size_t out_len_size = sizeof(unsigned int);
+    size_t out_len_size = 10*sizeof(unsigned int);
     size_t chunk_lengths_size = MAX_NUM_CHUNKS*sizeof(unsigned int);
     size_t chunk_numbers_size = MAX_NUM_CHUNKS*sizeof(unsigned int);
     size_t chunk_isdups_size = MAX_NUM_CHUNKS*sizeof(unsigned char);
@@ -40,37 +40,42 @@ LZW_kernel_call::LZW_kernel_call(cl::Context &context_1,
     LOG(LOG_DEBUG, "initializing cl::buffers and enqueue map buffers\n");
 
     for(int i=0; i<NUM_PACKETS; i++){
-        OCL_CHECK(err, in_buf[i] = cl::Buffer(context, CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY, in_buf_size, NULL, &err ));
-        OCL_CHECK(err, out_buf[i] = cl::Buffer(context, CL_MEM_ALLOC_HOST_PTR | CL_MEM_WRITE_ONLY, out_buf_size, NULL, &err ));
-        OCL_CHECK(err, out_len[i] = cl::Buffer(context, CL_MEM_ALLOC_HOST_PTR | CL_MEM_WRITE_ONLY, out_len_size, NULL, &err ));
-        OCL_CHECK(err,  chunk_lengths_buf[i] = cl::Buffer(context, CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY, chunk_lengths_size, NULL, &err ));
-        OCL_CHECK(err,  chunk_numbers_buf[i] = cl::Buffer(context, CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY, chunk_numbers_size, NULL, &err ));
-        OCL_CHECK(err,  chunk_isdups_buf[i] = cl::Buffer(context, CL_MEM_ALLOC_HOST_PTR | CL_MEM_READ_ONLY, chunk_isdups_size, NULL, &err ));
 
-        to_fpga_buf[i] = (unsigned char *)q.enqueueMapBuffer(in_buf[i], CL_TRUE, CL_MAP_WRITE, 0, in_buf_size);
-        from_fpga_buf[i] = (unsigned char *)q.enqueueMapBuffer(out_buf[i], CL_TRUE, CL_MAP_READ, 0, out_buf_size);
-        LZW_HW_output_length_ptr[i] = (volatile unsigned int *)q.enqueueMapBuffer(out_len[i], CL_TRUE, CL_MAP_READ, 0, out_len_size);
-        chunk_lengths_buf_ptr[i] = (unsigned int *)q.enqueueMapBuffer(chunk_lengths_buf[i], CL_TRUE, CL_MAP_WRITE, 0, chunk_lengths_size);
-        chunk_numbers_buf_ptr[i] = (unsigned int *)q.enqueueMapBuffer(chunk_numbers_buf[i], CL_TRUE, CL_MAP_WRITE, 0, chunk_numbers_size);
-        chunk_isdups_buf_ptr[i] = (unsigned char *)q.enqueueMapBuffer(chunk_isdups_buf[i], CL_TRUE, CL_MAP_WRITE, 0, chunk_isdups_size);
+        posix_memalign((void**)&to_fpga_buf[i], 4096, in_buf_size);
+        posix_memalign((void**)&from_fpga_buf[i], 4096, out_buf_size);
+        posix_memalign((void**)&LZW_HW_output_length_ptr[i], 4096, out_len_size);
+        posix_memalign((void**)&chunk_lengths_buf_ptr[i], 4096, chunk_lengths_size);
+        posix_memalign((void**)&chunk_numbers_buf_ptr[i], 4096, chunk_numbers_size);
+        posix_memalign((void**)&chunk_isdups_buf_ptr[i], 4096, chunk_isdups_size);
+
+        OCL_CHECK(err, in_buf[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, in_buf_size, to_fpga_buf[i], &err ));
+        OCL_CHECK(err, out_buf[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_buf_size, from_fpga_buf[i], &err ));
+        OCL_CHECK(err, out_len[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_WRITE_ONLY, out_len_size, LZW_HW_output_length_ptr[i], &err ));
+        OCL_CHECK(err,  chunk_lengths_buf[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, chunk_lengths_size, chunk_lengths_buf_ptr[i], &err ));
+        OCL_CHECK(err,  chunk_numbers_buf[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, chunk_numbers_size, chunk_numbers_buf_ptr[i], &err ));
+        OCL_CHECK(err,  chunk_isdups_buf[i] = cl::Buffer(context, CL_MEM_USE_HOST_PTR | CL_MEM_READ_ONLY, chunk_isdups_size, chunk_isdups_buf_ptr[i], &err ));
+
     }
-    *LZW_HW_output_length_ptr[0] = 0xFF;
+    LZW_HW_output_length_ptr[0][0] = 0xFF;
+    //*LZW_HW_output_length_ptr[0] = 3842;
     std::cout << "LZW_HW_output_length_ptr[0] = " << *LZW_HW_output_length_ptr[0] << std::endl;
+
     LOG(LOG_DEBUG, "initialization done\n");
 
 };
+
 
 LZW_kernel_call::~LZW_kernel_call()
 {
     std::cout << "LZW destructor, unmapping all objects" << std::endl;
 
     for(int i=0; i<NUM_PACKETS;i++){
-        q.enqueueUnmapMemObject(in_buf[i],to_fpga_buf[i]);
-        q.enqueueUnmapMemObject(out_buf[i],from_fpga_buf[i]);
-        q.enqueueUnmapMemObject(out_len[i],(unsigned int *)LZW_HW_output_length_ptr[i]);
-        q.enqueueUnmapMemObject(chunk_lengths_buf[i],chunk_lengths_buf_ptr[i]);
-        q.enqueueUnmapMemObject(chunk_numbers_buf[i],chunk_numbers_buf_ptr[i]);
-        q.enqueueUnmapMemObject(chunk_isdups_buf[i],chunk_isdups_buf_ptr[i]);
+        free(to_fpga_buf[i]);
+        free(from_fpga_buf[i]);
+        free(LZW_HW_output_length_ptr[i]);
+        free(chunk_lengths_buf_ptr[i]);
+        free(chunk_numbers_buf_ptr[i]);
+        free(chunk_isdups_buf_ptr[i]);
     }
     std::cout << "LZW destructor finished" << std::endl;
 }
@@ -104,9 +109,15 @@ void LZW_kernel_call::LZW_kernel_run(size_t in_buf_size,
     OCL_CHECK(err, err = kernel.setArg(4, num_chunks));
     OCL_CHECK(err, err = kernel.setArg(5, out_buf[packet_num]));
     OCL_CHECK(err, err = kernel.setArg(6, out_len[packet_num]));
+    // OCL_CHECK(err, err = kernel.setArg(0, in_buf[packet_num]));
+    // OCL_CHECK(err, err = kernel.setArg(1, chunk_lengths_buf[packet_num]));
+    // OCL_CHECK(err, err = kernel.setArg(2, num_chunks));
+    // OCL_CHECK(err, err = kernel.setArg(3, chunk_isdups_buf[packet_num]));
+    // OCL_CHECK(err, err = kernel.setArg(4, out_buf[packet_num]));
+    // OCL_CHECK(err, err = kernel.setArg(5, out_len[packet_num]));
+    // OCL_CHECK(err, err = kernel.setArg(6, chunk_numbers_buf[packet_num]));
 
     LOG(LOG_DEBUG, "KERNEL ARGS SET\n");
-    std::cout << "LZW_HW_output_length_ptr[0] = " << *(LZW_HW_output_length_ptr[0]) << std::endl;
 
     OCL_CHECK(err, err = q.enqueueMigrateMemObjects({in_buf[packet_num], chunk_lengths_buf[packet_num], chunk_numbers_buf[packet_num], chunk_isdups_buf[packet_num]}, 0 /* 0 means from host*/, NULL, &write_event));
     write_events_vec.push_back(write_event);
@@ -114,23 +125,8 @@ void LZW_kernel_call::LZW_kernel_run(size_t in_buf_size,
     OCL_CHECK(err, err = q.enqueueTask(kernel, &write_events_vec, &execute_event));
     execute_events_vec.push_back(execute_event);
 
-    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({out_buf[packet_num]}, CL_MIGRATE_MEM_OBJECT_HOST /* 0 means from host*/, &execute_events_vec, &read_event));
+    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({out_buf[packet_num],out_len[packet_num]}, CL_MIGRATE_MEM_OBJECT_HOST /* 0 means from host*/, &execute_events_vec, &read_event));
     read_events_vec.push_back(read_event);
-
-    OCL_CHECK(err, err = q.enqueueMigrateMemObjects({out_len[packet_num]}, CL_MIGRATE_MEM_OBJECT_HOST /* 0 means from host*/, &execute_events_vec, &read_len_event));
-    read_len_events_vec.push_back(read_len_event);
-
-    if(packet_num == 0){
-        std::cout << "before wait LZW_HW_output_length_ptr[0] = " << *(LZW_HW_output_length_ptr[0]) << std::endl;
-        // read_event.wait();
-        // read_len_event.wait();
-        q.finish();
-        std::cout << "after wait LZW_HW_output_length_ptr[0] = " << *(LZW_HW_output_length_ptr[0]) << std::endl;
-    }
-
-/*
-clWaitForEvents(num_events,)
-*/
 
 }
 
@@ -138,7 +134,7 @@ int packet_num_wait = 0;
 
 int LZW_kernel_call::LZW_wait_on_read_event(void)
 {
-    std::cout << "LZW_HW_output_length_ptr[0] = " << *LZW_HW_output_length_ptr[0] << std::endl;
+    std::cout << "LZW_HW_output_length_ptr[0] = " << LZW_HW_output_length_ptr[0][0] << std::endl;
     if(packet_num_wait < read_events_vec.size()){
         LOG(LOG_DEBUG,"CL EVENTS: waiting for packet %d in host\n",packet_num_wait);
         read_events_vec[packet_num_wait].wait();
@@ -156,6 +152,7 @@ void LZW_kernel_call::LZW_q_finish_wait(void)
     LOG(LOG_DEBUG,"Q.FINISH SKIPPED\n");
 }
 
+int flag = 0;
 
 uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *lzw_kernel, sem_t *sem_dedup_lzw, sem_t *sem_lzw, volatile int *sem_done)
 {
@@ -164,14 +161,6 @@ uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *
     static int packets_at_output = 0;
     static int total_packets_enqueued = 0;
 
-    // unsigned int *chunk_lengths;
-    // posix_memalign((void**)&chunk_lengths, 4*4096,MAX_NUM_CHUNKS*sizeof(unsigned int));
-    // unsigned int *chunk_numbers;
-    // posix_memalign((void**)&chunk_numbers, 4*4096,MAX_NUM_CHUNKS*sizeof(unsigned int));
-    // unsigned char *chunk_isdups;
-    // posix_memalign((void**)&chunk_isdups, 4*4096,MAX_NUM_CHUNKS*sizeof(unsigned char));
-
-    // unsigned int* LZW_HW_output_length_ptr = (unsigned int*)calloc(1,sizeof(unsigned int));
 
     stopwatch lzw_time;
     stopwatch lzw_wait_time;
@@ -215,14 +204,26 @@ uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *
             lzw_kernel->chunk_isdups_buf_ptr[packet_num][i] = chunklist_ptr[i].is_duplicate;
         }
 
+        if(flag == 0){
+            // warmup packet sent for hardware
+            lzw_kernel->LZW_kernel_run(  in_buf_size, lzw_kernel->to_fpga_buf[packet_num], 
+                                    out_buf_size, lzw_kernel->from_fpga_buf[packet_num], 
+                                    chunk_lengths_size, lzw_kernel->chunk_lengths_buf_ptr[packet_num],
+                                    chunk_numbers_size, lzw_kernel->chunk_numbers_buf_ptr[packet_num],
+                                    chunk_isdups_size, lzw_kernel->chunk_isdups_buf_ptr[packet_num],
+                                    out_len_size, num_chunks, packet_num);
+            
+            flag = 1;
+        }
+
         lzw_kernel->LZW_kernel_run(  in_buf_size, lzw_kernel->to_fpga_buf[packet_num], 
                                     out_buf_size, lzw_kernel->from_fpga_buf[packet_num], 
                                     chunk_lengths_size, lzw_kernel->chunk_lengths_buf_ptr[packet_num],
                                     chunk_numbers_size, lzw_kernel->chunk_numbers_buf_ptr[packet_num],
                                     chunk_isdups_size, lzw_kernel->chunk_isdups_buf_ptr[packet_num],
                                     out_len_size, num_chunks, packet_num);
-        
-        std::cout << "while loop LZW_HW_output_length_ptr[0] = " << *(lzw_kernel->LZW_HW_output_length_ptr[0]) << std::endl;
+
+        std::cout << "while loop LZW_HW_output_length_ptr[0] = " << (lzw_kernel->LZW_HW_output_length_ptr[0][0]) << std::endl;
 
         total_packets_enqueued++;
 
@@ -268,6 +269,10 @@ uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *
     // sync_time.stop();
     // std::cout << "Sync var = " << sync_time.avg_latency() << std::endl;
 
+
+    // read out warmup packet
+    lzw_kernel->LZW_wait_on_read_event();
+
     while(packets_pending--){
         LOG(LOG_DEBUG,"LZW_KERNEL Waiting for output packet = %d\n",packets_pending);
         lzw_kernel->LZW_wait_on_read_event();
@@ -277,9 +282,9 @@ uint64_t LZW_encoding_packet_level(packet_t **packet_ring_buf, LZW_kernel_call *
         }
         printf("\n");
 
-        memcpy(&file[offset],lzw_kernel->from_fpga_buf[packets_at_output],*(lzw_kernel->LZW_HW_output_length_ptr[packets_at_output]));
-        offset += *(lzw_kernel->LZW_HW_output_length_ptr[packets_at_output]);
-        std::cout << "output length = " << *(lzw_kernel->LZW_HW_output_length_ptr[packets_at_output]) << std::endl;
+        memcpy(&file[offset],lzw_kernel->from_fpga_buf[packets_at_output],(lzw_kernel->LZW_HW_output_length_ptr[packets_at_output][0]));
+        offset += (lzw_kernel->LZW_HW_output_length_ptr[packets_at_output][0]);
+        std::cout << "output length = " << (lzw_kernel->LZW_HW_output_length_ptr[packets_at_output][0]) << std::endl;
 
         packets_at_output++;
 

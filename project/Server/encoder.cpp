@@ -91,6 +91,9 @@ int main(int argc, char* argv[]) {
 
     /* packets structs for different stages in pipeline */
 
+
+    LOG(LOG_DEBUG, "LZW constructor initialized\n");
+
     // default is 2k
     int blocksize = BLOCKSIZE;
 
@@ -110,13 +113,13 @@ int main(int argc, char* argv[]) {
     }
 
 
-    posix_memalign((void**)&file, 4*4096, sizeof(unsigned char) * 70000000);
+    posix_memalign((void**)&file, 4096, sizeof(unsigned char) * 70000000);
     if (file == NULL) {
         printf("help\n");
     }
 
     for (int i = 0; i < NUM_PACKETS; i++) {
-        posix_memalign((void**)&input[i], 4*4096, sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
+        posix_memalign((void**)&input[i], 4096, sizeof(unsigned char) * (NUM_ELEMENTS + HEADER));
         if (input[i] == NULL) {
             std::cout << "aborting " << std::endl;
             return 1;
@@ -160,6 +163,7 @@ int main(int argc, char* argv[]) {
 
     cl_int err;
     std::string binaryFile = "LZW_encoding_HW.xclbin";
+    // std::string binaryFile = "lzw_kernel.xclbin";
     unsigned fileBufSize;
     std::vector<cl::Device> devices = get_xilinx_devices();
     devices.resize(1);
@@ -170,10 +174,8 @@ int main(int argc, char* argv[]) {
     cl::Program program(context, devices, bins, NULL, &err);
     cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);//CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE
 
+
     LZW_kernel_call lzw_kernel(context, program, q);
-
-    LOG(LOG_DEBUG, "LZW constructor initialized\n");
-
 
     /*
      * Create threads for the pipelined implementation 

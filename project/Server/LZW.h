@@ -24,12 +24,12 @@ class LZW_kernel_call
     std::vector<cl::Event> write_events_vec;
     std::vector<cl::Event> execute_events_vec;
     std::vector<cl::Event> read_events_vec;
-    std::vector<cl::Event> read_len_events_vec;
+
 
     public:
     unsigned char * to_fpga_buf[NUM_PACKETS];
     unsigned char * from_fpga_buf[NUM_PACKETS];
-    volatile unsigned int * LZW_HW_output_length_ptr[NUM_PACKETS];
+    unsigned int * LZW_HW_output_length_ptr[NUM_PACKETS];
     unsigned int * chunk_lengths_buf_ptr[NUM_PACKETS];
     unsigned int* chunk_numbers_buf_ptr[NUM_PACKETS];
     unsigned char* chunk_isdups_buf_ptr[NUM_PACKETS];
@@ -62,9 +62,10 @@ class LZW_kernel_call
     
     int LZW_wait_on_read_event(void);
 
+    // void LZW_hardware_warmup(void);
+
     void LZW_q_finish_wait(void);
 };
-
 
 uint64_t compress(unsigned int *compressed_data, unsigned int compressed_data_len);
 uint64_t LZW_encoding(chunk_t* chunk);
