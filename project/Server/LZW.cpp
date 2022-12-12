@@ -21,7 +21,7 @@ LZW_kernel_call::LZW_kernel_call(cl::Context &context_1,
 
     q = queue;
     context = context_1;
-    OCL_CHECK(err, kernel = cl::Kernel(program, "LZW_encoding_HW", &err));
+    OCL_CHECK(err, kernel = cl::Kernel(program, "LZW_encoding_HW:{LZW_encoding_HW_1,LZW_encoding_HW_2,LZW_encoding_HW_3}", &err));
 
 
     LOG(LOG_DEBUG, "creating vectors\n");

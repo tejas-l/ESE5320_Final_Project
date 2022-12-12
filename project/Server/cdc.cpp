@@ -10,7 +10,7 @@ extern unsigned char* file;
 static const double pow_table[WIN_SIZE] = {3.0, 9.0, 27.0, 81.0, 243.0, 729.0, 2187.0, 6561.0,
                              19683.0, 59049.0, 177147.0, 531441.0, 1594323.0, 4782969.0, 14348907.0, 43046721.0};
 
-
+#define TEMP_MIN_CHUNK_SIZE 2048
 
 uint64_t hash_func(unsigned char *input, unsigned int pos)
 {
@@ -94,11 +94,11 @@ void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t *
 
         LOG(LOG_DEBUG, "Calcualting hash\n");
 
-        uint64_t hash = hash_func(buff,MIN_CHUNK_SIZE);
+        uint64_t hash = hash_func(buff,TEMP_MIN_CHUNK_SIZE);
         chunklist_ptr[list_index].start = buff;
 
 
-        for(i = MIN_CHUNK_SIZE; i < packet_length - MIN_CHUNK_SIZE; i=i){
+        for(i = TEMP_MIN_CHUNK_SIZE; i < packet_length - TEMP_MIN_CHUNK_SIZE; i=i){
 
             if((hash % MODULUS) == TARGET)
             {
@@ -107,7 +107,7 @@ void CDC_packet_level(packet_t **packet_ring_buf, sem_t * const sem_cdc, sem_t *
                 prev_index = i + 1;
                 list_index++;
                 chunklist_ptr[list_index].start = &buff[i+1]; // Enter the chunk start for n+1 th element
-                i += MIN_CHUNK_SIZE;
+                i += TEMP_MIN_CHUNK_SIZE;
                 hash = hash_func(buff,i);
                 continue;
             }
