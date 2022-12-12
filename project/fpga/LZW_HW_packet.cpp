@@ -10,7 +10,7 @@
 #define MIN_CHUNK_SIZE (16)
 #define MAX_PACKET_SIZE 8*1024
 #define MAX_NUM_CHUNKS (MAX_PACKET_SIZE/MIN_CHUNK_SIZE)
-#define BUCKET_SIZE 3
+#define BUCKET_SIZE 2
 
 
 #define HASH_TABLE_SIZE 8192
@@ -255,7 +255,7 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
         if(!chunk_isdup_lzw)
         {
             hash_node_t hash_node_ptr[HASH_TABLE_SIZE][BUCKET_SIZE];
-            #pragma HLS array_partition variable=hash_node_ptr block factor=3 dim=2
+            #pragma HLS array_partition variable=hash_node_ptr block factor=2 dim=2
             key_size_t key[4][512]; 
             #pragma HLS array_partition variable=key block factor=4 dim=1
             int value[72];
@@ -272,7 +272,7 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
             LZW_HASH_CLEAR_LOOP_1:for(int i = 0; i < ARR_SIZE; i++){
                 #pragma HLS loop_flatten
                 LZW_HASH_CLEAR_LOOP_2:for(int j = 0; j < BUCKET_SIZE; j++){
-                #pragma HLS UNROLL factor=3
+                #pragma HLS UNROLL factor=2
                     hash_node_ptr[i][j].hash_value = 0;         
                 }
             }
@@ -351,13 +351,6 @@ LZW_LOOP_1:for(uint64_t chunks =0; chunks < num_chunks_local; chunks++)
 
             lzw_sync.write(1);
         }
-        // else{
-        //     LZW_LOOP_3:for (unsigned int i = 0; i < chunk_length_lzw; i++)
-        //     {
-        //         #pragma HLS PIPELINE II=1
-        //         in_stream.read();
-        //     }
-        // }
 
     }
 }
